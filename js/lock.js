@@ -77,6 +77,7 @@ const Lock = (() => {
     document.body.classList.remove('locked');
     const el = document.getElementById('lock'); if (el) el.remove();
     if (onUnlock) { const f = onUnlock; onUnlock = null; f(); } else if (window.route) route();
+    document.dispatchEvent(new Event('app-unlocked'));   // lets the app pull the latest files after every unlock
   }
 
   // No way to recover the password: reset this device. Files come back from the GitHub backup once reconnected.

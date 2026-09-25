@@ -976,6 +976,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initTooltips(document);
   // Pull the latest files from GitHub after unlocking, and whenever the app comes back to the foreground.
   const pull = () => { if (Lock.isUnlocked()) GH.sync().then(changed => { if (changed && !/^#(new|edit)/.test(location.hash)) route(); }).catch(() => {}); };
-  Lock.gate(() => { route(); pull(); });
+  Lock.gate(() => { route(); });
+  // Sync after EVERY unlock (first open and after the 5-minute auto-lock), not only on first open.
+  document.addEventListener('app-unlocked', pull);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull(); });
 });
