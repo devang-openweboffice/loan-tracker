@@ -23,7 +23,10 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
-body { font: 14px/1.5 var(--font); color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased; }
+/* The page's base colour is the header navy: iOS paints the status-bar area and the pull-down bounce with it,
+   so the top of the screen is one solid colour like a native app. The content area keeps its light background. */
+html { background: var(--navy); }
+body { font: 14px/1.5 var(--font); color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased; min-height: 100vh; min-height: 100dvh; }
 a { color: var(--accent-ink); text-decoration: none; }
 a:hover { text-decoration: underline; }
 h1, h2, h3 { margin: 0; line-height: 1.25; }
@@ -35,7 +38,7 @@ h3 { font-size: 14px; font-weight: 600; }
 .late { color: var(--critical); font-weight: 600; }
 
 /* top bar */
-.topbar { background: var(--navy); color: #fff; position: sticky; top: 0; z-index: 20; }
+.topbar { background: linear-gradient(180deg, #0f1c33 0%, var(--navy) 100%); color: #fff; position: sticky; top: 0; z-index: 20; box-shadow: 0 1px 0 rgba(255,255,255,.06), 0 4px 16px rgba(19,35,63,.18); }
 .topbar-in { max-width: 1240px; margin: 0 auto; padding: 0 20px; display: flex; align-items: center; gap: 24px; height: 56px; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: #fff; white-space: nowrap; }
 .brand:hover { text-decoration: none; }
@@ -403,7 +406,9 @@ body.locked .topbar, body.locked .tabbar, body.locked #view { visibility: hidden
   html { -webkit-tap-highlight-color: transparent; }
   body { overscroll-behavior-y: none; padding-bottom: calc(var(--tabbar-h) + var(--safe-b)); }
   .topbar { padding-top: env(safe-area-inset-top, 0px); }
-  .topbar-in { height: 50px; padding: 0 16px; }
+  .topbar-in { height: 52px; padding: 0 16px; }
+  .brand { font-size: 17px; letter-spacing: -.01em; }
+  .brand .logo { width: 30px; height: 30px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
   .topbar .nav { display: none; }
   .brand small { display: none; }
   .brand .logo { width: 28px; height: 28px; }
@@ -497,6 +502,7 @@ body.locked .topbar, body.locked .tabbar, body.locked #view { visibility: hidden
 /* ---------- print: only the report, A4 ---------- */
 @page { size: A4; margin: 10mm; }
 @media print {
+  html { background: #fff; }
   body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .topbar, .tabbar, .update-bar, .no-print, #toast, #viz-tip { display: none !important; }
   body { padding: 0 !important; }

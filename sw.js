@@ -1,6 +1,6 @@
 /* Service worker: offline app shell, cached Claude SDK, and the "share photos to this app" target. */
 
-const VERSION = 'v10';
+const VERSION = 'v11';
 const SHELL_CACHE = 'shell-' + VERSION;
 const RUNTIME_CACHE = 'runtime-cdn';   // fixed name: the ~7 MB reader files survive app updates
 const INBOX = 'share-inbox';
