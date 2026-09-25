@@ -86,8 +86,8 @@ Extract the fields for this one file. Rules:
         messages: [{ role: 'user', content }]
       });
     } catch (err) {
-      if (err instanceof Anthropic.AuthenticationError) throw new Error('The API key was rejected. Check it in Settings.');
-      if (err instanceof Anthropic.PermissionDeniedError) throw new Error('This API key is not allowed to use the model. Check your Anthropic account.');
+      if (err instanceof Anthropic.AuthenticationError) throw new Error('The photo-reading key was rejected. Ask Devang to check it.');
+      if (err instanceof Anthropic.PermissionDeniedError) throw new Error('The photo-reading key is not allowed to use the model. Ask Devang to check the Anthropic account.');
       if (err instanceof Anthropic.RateLimitError) throw new Error('Too many requests right now. Wait a minute and try again.');
       if (err instanceof Anthropic.BadRequestError) throw new Error('The request was rejected: ' + err.message);
       if (err instanceof Anthropic.APIConnectionError) throw new Error('Could not reach the Claude API. Check the internet connection.');
@@ -98,6 +98,19 @@ Extract the fields for this one file. Rules:
     if (response.stop_reason === 'max_tokens') throw new Error('The reply was cut off. Try fewer photos at a time.');
     const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
     try { return JSON.parse(text); } catch (e) { throw new Error('Could not understand the reply. Please try again.'); }
+  }
+
+  // Checks the key without using any tokens: just looks up the model.
+  async function testKey(apiKey) {
+    const Anthropic = await sdk();
+    const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+    try { await client.models.retrieve(MODEL); }
+    catch (err) {
+      if (err instanceof Anthropic.AuthenticationError) throw new Error('Anthropic rejected this key. Check that it was copied completely.');
+      if (err instanceof Anthropic.NotFoundError || err instanceof Anthropic.PermissionDeniedError) throw new Error('This key has no access to ' + MODEL + '. Check the account on console.anthropic.com.');
+      if (err instanceof Anthropic.APIConnectionError) throw new Error('Could not reach Anthropic. Check the internet connection.');
+      throw err;
+    }
   }
 
   /* ---------- photo storage (IndexedDB — photos are too big for localStorage) ---------- */
@@ -122,5 +135,5 @@ Extract the fields for this one file. Rules:
     remove: id => tx('readwrite', s => s.delete(id)).catch(() => {})
   };
 
-  return { read, prepare, photos, MODEL };
+  return { read, prepare, testKey, photos, MODEL };
 })();

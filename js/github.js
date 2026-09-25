@@ -92,14 +92,34 @@ const GH = (() => {
   const tombs = () => { try { return JSON.parse(localStorage.getItem(TOMB_KEY)) || {}; } catch (e) { return {}; } };
   function markDeleted(id) { const t = tombs(); t[id] = new Date().toISOString(); localStorage.setItem(TOMB_KEY, JSON.stringify(t)); }
 
-  // Newest version of each file wins; a deletion wins over any edit made before it.
+  // Two people (Avani + Devang) can edit the same file on different phones.
+  // Details: newest edit wins. Stage history and queries: kept from both sides, so nothing logged is lost.
+  function mergeFile(x, y) {
+    const [older, newer] = (x.updatedAt || '') > (y.updatedAt || '') ? [y, x] : [x, y];
+    const out = Object.assign({}, newer);
+    const hist = new Map();
+    [...(older.history || []), ...(newer.history || [])].forEach(h => hist.set(h.stage + '|' + h.at, h));
+    out.history = [...hist.values()];
+    const qs = new Map();
+    [...(older.queries || []), ...(newer.queries || [])].forEach(q => {
+      const cur = qs.get(q.id);
+      // keep the resolved version if either phone resolved it
+      if (!cur || (!cur.resolvedAt && q.resolvedAt) || (!!cur.resolvedAt === !!q.resolvedAt)) qs.set(q.id, q);
+    });
+    out.queries = [...qs.values()];
+    out.photoPaths = [...new Set([...(older.photoPaths || []), ...(newer.photoPaths || [])])];
+    return out;
+  }
+
+  // A deletion wins over any edit made before it.
   function merge(a, b) {
     const deleted = Object.assign({}, a.deleted, b.deleted);
     Object.keys(b.deleted || {}).forEach(k => { if (a.deleted && a.deleted[k] > deleted[k]) deleted[k] = a.deleted[k]; });
     const byId = new Map();
     [...(a.files || []), ...(b.files || [])].forEach(f => {
       const cur = byId.get(f.id);
-      if (!cur || (f.updatedAt || '') > (cur.updatedAt || '')) byId.set(f.id, f);
+      if (!cur) byId.set(f.id, f);
+      else if (JSON.stringify(cur) !== JSON.stringify(f)) byId.set(f.id, mergeFile(cur, f));
     });
     const files = [...byId.values()].filter(f => !deleted[f.id] || (f.updatedAt || '') > deleted[f.id]);
     return { files, deleted };

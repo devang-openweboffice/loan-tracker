@@ -430,7 +430,7 @@ const Report = (() => {
 
 // Redraw the report charts when the window is resized or printed, so they always match the available width.
 (() => {
-  const onReport = () => /^#\/?report/.test(location.hash);
+  const onReport = () => Lock.isUnlocked() && /^#\/?report/.test(location.hash);
   const month = () => location.hash.split('/')[1] || UI.month;
   let t;
   window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { if (onReport()) { const y = scrollY; Report.render(month()); scrollTo(0, y); } }, 150); });

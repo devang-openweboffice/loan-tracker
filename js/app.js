@@ -82,6 +82,7 @@ const FORM = [
 /* ---------- router ---------- */
 
 function route() {
+  if (!Lock.isUnlocked()) return;   // nothing renders behind the lock screen
   const [name, arg] = location.hash.replace(/^#\/?/, '').split('/');
   $$('.nav a, .tabbar a').forEach(a => a.classList.toggle('active', a.dataset.nav === (name === 'edit' || name === 'file' ? 'files' : name === 'manager' ? 'managers' : name || 'files')));
   window.scrollTo(0, 0);
@@ -295,7 +296,7 @@ function renderForm(id) {
     </label>
     <div class="thumbs" id="thumbs"></div>
     <div class="upload-actions">
-      <span class="muted" id="ai-status">${s.apiKey ? '' : 'Add your Claude API key in <a href="#settings">Settings</a> to read photos automatically.'}</span>
+      <span class="muted" id="ai-status">${s.apiKey ? '' : 'Photo reading is not set up on this phone yet (ask Devang). You can still attach photos and fill the form below yourself.'}</span>
       <button type="button" class="btn primary" id="ai-read" disabled>Read documents</button>
     </div>
   </section>
@@ -369,7 +370,7 @@ function renderForm(id) {
     if (!imgs.length) return;
     status.textContent = 'Preparing photos…';
     for (const file of imgs) { try { photos.push(await Extract.prepare(file)); } catch (e) { toast('Could not open ' + file.name); } }
-    status.innerHTML = s.apiKey ? `${photos.length} photo${photos.length > 1 ? 's' : ''} ready. Click <b>Read documents</b>.` : 'Photos will be saved with the file. Add your Claude API key in <a href="#settings">Settings</a> to read them automatically.';
+    status.innerHTML = s.apiKey ? `${photos.length} photo${photos.length > 1 ? 's' : ''} ready. Click <b>Read documents</b>.` : 'Photos will be saved with the file. Photo reading is not set up on this phone yet (ask Devang), so please fill the form below yourself.';
     drawThumbs();
   }
   $('#photo-input').onchange = e => { addPhotos(e.target.files); e.target.value = ''; };
@@ -390,7 +391,7 @@ function renderForm(id) {
         (data.notes ? `<br><span class="muted">Note: ${esc(data.notes)}</span>` : '');
       form.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
-      status.innerHTML = `<span class="late">${esc(err.message === 'NO_KEY' ? 'Add your Claude API key in Settings first.' : err.message)}</span>`;
+      status.innerHTML = `<span class="late">${esc(err.message === 'NO_KEY' ? 'Photo reading is not set up on this phone yet (ask Devang).' : err.message)}</span>`;
     } finally { readBtn.textContent = 'Read documents'; readBtn.disabled = !photos.length || !s.apiKey; }
   };
 
@@ -711,12 +712,8 @@ function renderSettings() {
       <p id="gh-status">${GH.enabled() ? '✓ Connected. Photos and files are backed up automatically' + (localStorage.getItem('avani_last_sync') ? ' · last synced ' + fmtDate(localStorage.getItem('avani_last_sync'), true) : '') + '.' : 'Not set up yet. Your files are saved on this device only.'}</p></div>
       ${GH.enabled() ? '<button type="button" class="btn" id="gh-sync">Sync now</button>' : ''}</div><div class="pad"></div></section>
 
-    <section class="card"><div class="card-h"><div><h2>Photo reading (Claude AI)</h2>
-      <p>Needed for "Fill from photos". Get a key at console.anthropic.com. The key is saved only in this browser, and photos are sent only to Anthropic's API when you click "Read documents". Check with your company that sending customer documents to an AI service is allowed.</p></div></div>
-      <div class="grid">
-        <label class="fld span2"><span>Claude API key</span><input name="apiKey" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(s.apiKey || '')}"></label>
-        <label class="fld"><span>Model</span><input value="${Extract.MODEL}" disabled></label>
-      </div></section>
+    <section class="card"><div class="card-h"><div><h2>Photo reading</h2>
+      <p>${s.apiKey ? '✓ Ready. "Fill from photos" reads your documents automatically.' : 'Not set up on this phone yet. Ask Devang to set it up. Until then you can still attach photos and fill the form yourself.'}</p></div></div><div class="pad"></div></section>
 
     <section class="card"><div class="card-h"><div><h2>Monthly target</h2><p>Set a target for a specific month; months without one use the default.</p></div></div>
       <div class="grid">
@@ -742,6 +739,15 @@ function renderSettings() {
     <div class="form-actions"><button class="btn primary">Save settings</button></div>
   </form>
 
+  <section class="card"><div class="card-h"><div><h2>App password</h2><p>The app asks for this password every time it opens, and after 5 minutes in the background.</p></div>
+      <button type="button" class="btn" id="lock-now">Lock now</button></div>
+    <form id="pw-form" autocomplete="off"><div class="grid">
+      <label class="fld"><span>Current password</span><input type="password" name="old" autocomplete="current-password" required></label>
+      <label class="fld"><span>New password</span><input type="password" name="new1" autocomplete="new-password" required></label>
+      <label class="fld"><span>New password again</span><input type="password" name="new2" autocomplete="new-password" required></label>
+    </div><div class="row-actions"><button class="btn primary">Change password</button><span class="muted" id="pw-status"></span></div></form>
+  </section>
+
   <section class="card"><div class="card-h"><div><h2>Backup & data</h2><p>Your data is stored only in this browser on this computer. Download a backup regularly, and use it to move to another computer.</p></div></div>
     <div class="row-actions">
       <button class="btn" id="export">Download backup (.json)</button>
@@ -751,7 +757,13 @@ function renderSettings() {
       <button class="btn danger-ghost" id="wipe">Delete all files</button>
     </div></section>
 
-  <section class="card" id="gh-admin" hidden><div class="card-h"><div><h2>Admin: cloud backup setup</h2>
+  <section class="card" id="gh-admin" hidden><div class="card-h"><div><h2>Admin setup</h2>
+    <p>For Devang only. Both keys below are saved on this device only; they are never synced, backed up or put in the app's code.</p></div></div>
+    <div class="card-h"><div><h3>Photo reading: Claude API key</h3>
+    <p>Create one at console.anthropic.com → API Keys (setting a monthly spend limit there is a good idea). Photos are sent only to Anthropic's API when "Read documents" is tapped.</p></div></div>
+    <div class="grid"><label class="fld span3"><span>Claude API key</span><input id="ai-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(s.apiKey || '')}"></label></div>
+    <div class="row-actions"><button type="button" class="btn primary" id="ai-save">Save & test</button><button type="button" class="btn danger-ghost" id="ai-clear">Remove</button><span class="muted" id="ai-admin-status"></span></div>
+    <div class="card-h"><div><h3>Cloud backup: GitHub token</h3>
     <p>Repo: <b>${esc(APP_CONFIG.githubOwner)}/${esc(APP_CONFIG.githubRepo)}</b> (set in js/config.js). Paste a fine-grained token with access to only that private repo and <b>Contents: Read and write</b>. It is stored only on this device.</p></div></div>
     <div class="grid"><label class="fld span3"><span>GitHub access token</span><input id="gh-token" type="password" autocomplete="off" placeholder="github_pat_…" value="${esc(s.ghToken || '')}"></label></div>
     <div class="row-actions"><button type="button" class="btn primary" id="gh-save">Save & connect</button><button type="button" class="btn danger-ghost" id="gh-clear">Disconnect</button><span class="muted" id="gh-admin-status"></span></div>
@@ -763,9 +775,10 @@ function renderSettings() {
     const fd = Object.fromEntries(new FormData(e.target));
     const stages = fd.stages.split('\n').map(x => x.trim()).filter(Boolean);
     if (stages.length < 2) { toast('Please enter at least 2 stages'); return; }
+    const s = Store.settings();   // fresh copy: keeps keys/tokens saved since this screen opened
     Object.assign(s, {
       rmName: fd.rmName, designation: fd.designation, subId: fd.subId, company: fd.company, branch: fd.branch,
-      masterPolicyNo: fd.masterPolicyNo, apiKey: (fd.apiKey || '').trim(), managerName: fd.managerName, managerEmail: fd.managerEmail, stages,
+      masterPolicyNo: fd.masterPolicyNo, managerName: fd.managerName, managerEmail: fd.managerEmail, stages,
       businessStage: stages.includes(fd.businessStage) ? fd.businessStage : stages[stages.length - 1],
       tatBenchmarkDays: num(fd.tatBenchmarkDays) || 7, stageBenchmarkDays: num(fd.stageBenchmarkDays) || 2, queryBenchmarkDays: num(fd.queryBenchmarkDays) || 2,
       defaultTargets: { files: num(fd.dFiles), premium: num(fd.dPremium), loan: num(fd.dLoan) }
@@ -778,7 +791,7 @@ function renderSettings() {
     el.tFiles.value = tt.files; el.tPremium.value = tt.premium; el.tLoan.value = tt.loan;
   };
   const ib = $('#pwa-install'); if (ib) ib.onclick = async () => { await PWA.install(); renderSettings(); };
-  // Tap the version label 5 times to open the admin setup (keeps GitHub details out of Avani's way).
+  // Tap the version label 5 times to open the admin setup (Claude key + GitHub token; keeps them out of Avani's way).
   let taps = 0, tapTimer;
   $('#app-version').onclick = () => {
     taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { taps = 0; }, 1500);
@@ -795,6 +808,26 @@ function renderSettings() {
       adminStatus('✓ Connected to <b>' + esc(name) + '</b> and synced.');
     } catch (e) { adminStatus('<span class="late">' + esc(e.message) + '</span>'); }
   };
+  $('#lock-now').onclick = () => Lock.lockNow();
+  $('#pw-form').onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target.elements, st = $('#pw-status');
+    if (f.new1.value !== f.new2.value) { st.innerHTML = '<span class="late">The new passwords do not match.</span>'; return; }
+    try { await Lock.change(f.old.value, f.new1.value); e.target.reset(); st.textContent = '✓ Password changed'; }
+    catch (err) { st.innerHTML = '<span class="late">' + esc(err.message) + '</span>'; }
+  };
+  const aiStatus = msg => { $('#ai-admin-status').innerHTML = msg; };
+  $('#ai-save').onclick = async () => {
+    const key = $('#ai-key').value.trim();
+    if (!key) { aiStatus('<span class="late">Paste the key first.</span>'); return; }
+    aiStatus('<span class="spinner"></span> Checking the key…');
+    try {
+      await Extract.testKey(key);
+      const ss = Store.settings(); ss.apiKey = key; Store.saveSettings(ss);
+      aiStatus('✓ Key works. Photo reading is ready on this device.');
+    } catch (e) { aiStatus('<span class="late">' + esc(e.message) + '</span>'); }
+  };
+  $('#ai-clear').onclick = () => { const ss = Store.settings(); ss.apiKey = ''; Store.saveSettings(ss); renderSettings(); toast('Claude API key removed from this device'); };
   $('#gh-clear').onclick = () => { const ss = Store.settings(); ss.ghToken = ''; Store.saveSettings(ss); renderSettings(); toast('Cloud backup disconnected on this device'); };
   const gs = $('#gh-sync');
   if (gs) gs.onclick = async () => {
@@ -885,9 +918,9 @@ function download(name, content, type) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  initTooltips(document); route();
-  // Pull the latest files from GitHub on start, and whenever the app comes back to the foreground.
-  const pull = () => GH.sync().then(changed => { if (changed && !/^#(new|edit)/.test(location.hash)) route(); }).catch(() => {});
-  pull();
+  initTooltips(document);
+  // Pull the latest files from GitHub after unlocking, and whenever the app comes back to the foreground.
+  const pull = () => { if (Lock.isUnlocked()) GH.sync().then(changed => { if (changed && !/^#(new|edit)/.test(location.hash)) route(); }).catch(() => {}); };
+  Lock.gate(() => { route(); pull(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull(); });
 });
