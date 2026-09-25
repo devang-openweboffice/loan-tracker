@@ -44,8 +44,21 @@ const GH = (() => {
   async function test() {
     const c = cfg();
     const res = await fetch(`${API}/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}`, { headers: { Authorization: `Bearer ${c.token}`, Accept: 'application/vnd.github+json' } });
-    if (res.status === 401) throw new Error('GitHub rejected the token.');
-    if (!res.ok) throw new Error('Repo not found, or the token has no access to it.');
+    if (res.status === 401) throw new Error('GitHub rejected the token. It may be incomplete, expired or deleted. Copy it again, or create a new one.');
+    if (!res.ok) {
+      // Work out why: whose token is this, and is it a classic token without the "repo" scope?
+      let who = '';
+      try {
+        const u = await fetch(`${API}/user`, { headers: { Authorization: `Bearer ${c.token}`, Accept: 'application/vnd.github+json' } });
+        if (u.ok) who = (await u.json()).login;
+      } catch (e) {}
+      const repo = `${c.owner}/${c.repo}`;
+      if (who && who.toLowerCase() !== String(c.owner).toLowerCase())
+        throw new Error(`This token belongs to @${who}, but the backup repo is ${repo}. Create the token while signed in as ${c.owner}.`);
+      if (/^ghp_/.test(c.token))
+        throw new Error(`This is a classic token and it can't see ${repo}. On GitHub, edit it and tick the "repo" scope, or create a fine-grained token instead.`);
+      throw new Error(`The token works${who ? ' for @' + who : ''}, but it has no access to ${repo}. On GitHub → Settings → Developer settings → Fine-grained tokens, edit the token: Repository access → "Only select repositories" → ${c.repo}, and Contents → "Read and write". Click Update, then Save & connect again.`);
+    }
     const r = await res.json();
     if (!r.private) throw new Error(`"${r.full_name}" is PUBLIC. Customer documents must go to a PRIVATE repo. Change it to private on GitHub first.`);
     if (r.permissions && !r.permissions.push) throw new Error('The token can read but not write. Give it "Contents: Read and write".');
