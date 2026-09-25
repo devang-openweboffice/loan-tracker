@@ -239,7 +239,6 @@ function renderList() {
   q.oninput = e => { UI.q = e.target.value; renderList(); const n = $('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
   $$('.chip').forEach(c => c.onclick = () => { UI.stage = c.dataset.stage; renderList(); });
   $$('tr[data-id]').forEach(tr => tr.onclick = e => { if (!e.target.closest('a')) location.hash = '#file/' + tr.dataset.id; });
-  const loadBtn = $('#load-sample'); if (loadBtn) loadBtn.onclick = loadSamples;
   PWA.bindBanner(view());
 }
 
@@ -249,18 +248,11 @@ function shortStage(s) { return s.length > 18 ? s.split(' ')[0] : s; }
 function emptyState(hasAny) {
   return `<div class="empty">
     <h3>${hasAny ? 'No files match these filters' : 'No files yet'}</h3>
-    <p>${hasAny ? 'Try another month or clear the filters.' : 'Add your first loan file, or load the 3 sample files taken from your reference documents to try the app out.'}</p>
-    <div class="row-actions"><a class="btn primary" href="#new">+ New file</a>${hasAny ? '' : '<button class="btn" id="load-sample">Load 3 sample files</button>'}</div>
+    <p>${hasAny ? 'Try another month or clear the filters.' : 'Add your first loan file with + New file.'}</p>
+    <div class="row-actions"><a class="btn primary" href="#new">+ New file</a></div>
   </div>`;
 }
 
-function loadSamples() {
-  const list = Store.files().concat(sampleFiles());
-  Store.saveFiles(list);
-  UI.month = '2026-09'; UI.scope = 'active';
-  toast('Loaded 3 sample files');
-  route();
-}
 
 /* ---------- form ---------- */
 
@@ -831,7 +823,6 @@ function renderSettings() {
       <button class="btn" id="export">Download backup (.json)</button>
       <label class="btn">Restore from backup<input type="file" id="import" accept=".json" hidden></label>
       <button class="btn" id="export-csv">Export files to Excel (.csv)</button>
-      <button class="btn" id="sample">Load 3 sample files</button>
       <button class="btn danger-ghost" id="wipe">Delete all files</button>
     </div></section>
 
@@ -918,7 +909,6 @@ function renderSettings() {
     r.readAsText(file);
   };
   $('#export-csv').onclick = exportCsv;
-  $('#sample').onclick = loadSamples;
   $('#wipe').onclick = () => {
     if (!confirm('Delete ALL files from this browser? Download a backup first if you need one.')) return;
     Store.saveFiles([]); toast('All files deleted');
