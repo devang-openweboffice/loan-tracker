@@ -11,7 +11,9 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- "default": iOS draws a SOLID status bar in the theme-color (navy) and starts the app below it.
+     "black-translucent" puts the app under the clock, where iOS 26 adds a fade overlay that can't be removed. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Loan Tracker">
 <style id="app-css">
 :root {
