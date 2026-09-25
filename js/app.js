@@ -786,7 +786,9 @@ function renderSettings() {
 
     <section class="card"><div class="card-h"><div><h2>Cloud backup</h2>
       <p id="gh-status">${GH.enabled() ? '✓ Connected. Photos and files are backed up automatically' + (localStorage.getItem('avani_last_sync') ? ' · last synced ' + fmtDate(localStorage.getItem('avani_last_sync'), true) : '') + '.' : 'Not set up yet. Your files are saved on this device only.'}</p></div>
-      ${GH.enabled() ? '<button type="button" class="btn" id="gh-sync">Sync now</button>' : ''}</div><div class="pad"></div></section>
+      </div><div class="row-actions">${GH.enabled()
+        ? '<button type="button" class="btn" id="gh-sync">Sync now</button><button type="button" class="btn" id="gh-open">Change token</button>'
+        : '<button type="button" class="btn primary" id="gh-open">Set up backup</button>'}</div></section>
 
     <section class="card"><div class="card-h"><div><h2>Photo reading</h2>
       <p>✓ Free, and runs on this phone: nothing to set up, no internet needed after the first use. It reads the printed pages (sanction letter and GCPP calculator). Handwritten pages are typed by hand.</p></div></div><div class="pad"></div></section>
@@ -824,7 +826,7 @@ function renderSettings() {
     </div><div class="row-actions"><button class="btn primary">Change password</button><span class="muted" id="pw-status"></span></div></form>
   </section>
 
-  <section class="card"><div class="card-h"><div><h2>Backup & data</h2><p>Your data is stored only in this browser on this computer. Download a backup regularly, and use it to move to another computer.</p></div></div>
+  <section class="card"><div class="card-h"><div><h2>Backup & data</h2><p>${GH.enabled() ? 'Your files are also backed up to GitHub automatically. A downloaded copy is an extra safety net.' : 'Your data is stored only on this device until cloud backup is set up. Download a backup regularly.'}</p></div></div>
     <div class="row-actions">
       <button class="btn" id="export">Download backup (.json)</button>
       <label class="btn">Restore from backup<input type="file" id="import" accept=".json" hidden></label>
@@ -833,9 +835,9 @@ function renderSettings() {
       <button class="btn danger-ghost" id="wipe">Delete all files</button>
     </div></section>
 
-  <section class="card" id="gh-admin" hidden><div class="card-h"><div><h2>Admin setup</h2>
+  <section class="card" id="gh-admin" hidden><div class="card-h"><div><h2>Cloud backup setup</h2>
     <p>For Devang only. The token below is saved on this device only; it is never synced, backed up or put in the app's code.</p></div></div>
-    <div class="card-h"><div><h3>Cloud backup: GitHub token</h3>
+    <div class="card-h"><div><h3>GitHub token</h3>
     <p>Repo: <b>${esc(APP_CONFIG.githubOwner)}/${esc(APP_CONFIG.githubRepo)}</b> (set in js/config.js). Paste a fine-grained token with access to only that private repo and <b>Contents: Read and write</b>. It is stored only on this device.</p></div></div>
     <div class="grid"><label class="fld span3"><span>GitHub access token</span><input id="gh-token" type="password" autocomplete="off" placeholder="github_pat_…" value="${esc(s.ghToken || '')}"></label></div>
     <div class="row-actions"><button type="button" class="btn primary" id="gh-save">Save & connect</button><button type="button" class="btn danger-ghost" id="gh-clear">Disconnect</button><span class="muted" id="gh-admin-status"></span></div>
@@ -869,6 +871,8 @@ function renderSettings() {
     taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { taps = 0; }, 1500);
     if (taps >= 5) { taps = 0; const p = $('#gh-admin'); p.hidden = !p.hidden; if (!p.hidden) p.scrollIntoView({ behavior: 'smooth' }); }
   };
+  const openAdmin = () => { const p = $('#gh-admin'); p.hidden = false; p.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => $('#gh-token').focus(), 400); };
+  $('#gh-open').onclick = openAdmin;
   const adminStatus = msg => { $('#gh-admin-status').innerHTML = msg; };
   $('#gh-save').onclick = async () => {
     const ss = Store.settings(); ss.ghToken = $('#gh-token').value.trim(); Store.saveSettings(ss);
@@ -878,6 +882,7 @@ function renderSettings() {
       adminStatus('<span class="spinner"></span> Connected to ' + esc(name) + '. Syncing…');
       await GH.sync(); await uploadMissingPhotos(adminStatus);
       adminStatus('✓ Connected to <b>' + esc(name) + '</b> and synced.');
+      toast('Cloud backup connected'); setTimeout(renderSettings, 1500);
     } catch (e) { adminStatus('<span class="late">' + esc(e.message) + '</span>'); }
   };
   $('#lock-now').onclick = () => Lock.lockNow();
