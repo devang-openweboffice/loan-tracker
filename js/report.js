@@ -325,6 +325,8 @@ const Report = (() => {
         </div>
       </section>
 
+      ${Managers.reportSection(m)}
+
       <section class="r-sec insights">
         <h2>Performance review</h2>
         <div class="ins-grid">

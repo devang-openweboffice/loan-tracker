@@ -83,7 +83,7 @@ const FORM = [
 
 function route() {
   const [name, arg] = location.hash.replace(/^#\/?/, '').split('/');
-  $$('.nav a, .tabbar a').forEach(a => a.classList.toggle('active', a.dataset.nav === (name === 'edit' || name === 'file' ? 'files' : name || 'files')));
+  $$('.nav a, .tabbar a').forEach(a => a.classList.toggle('active', a.dataset.nav === (name === 'edit' || name === 'file' ? 'files' : name === 'manager' ? 'managers' : name || 'files')));
   window.scrollTo(0, 0);
   switch (name) {
     case 'new': return renderForm();
@@ -92,6 +92,8 @@ function route() {
     case 'report': return Report.render(arg || UI.month);
     case 'settings': return renderSettings();
     case 'queries': return renderQueries();
+    case 'managers': return Managers.render();
+    case 'manager': return Managers.renderOne(arg);
     default: return renderList();
   }
 }
@@ -177,7 +179,7 @@ function renderList() {
       <div class="mini-track"><div style="width:${Math.min(100, pct)}%"></div></div><small>${pct}% of ${inr(target.premium, true)} · ${booked.length} file${booked.length === 1 ? '' : 's'} reached ${esc(s.businessStage)}</small></div>
     <div class="kpi"><span>In process</span><b>${inProcess.length}</b><small>${esc(scopeLabel())}</small></div>
     <div class="kpi"><span>Disbursed</span><b>${scoped.filter(x => x.fx.completed).length}</b><small>${scoped.filter(x => x.fx.outcome).length} rejected / cancelled</small></div>
-    <div class="kpi ${openQ ? 'alert' : ''}"><span>Open queries</span><b>${openQ}</b><small>${scoped.reduce((a, x) => a + x.fx.queries.length, 0)} raised in total</small></div>
+    <a class="kpi link ${openQ ? 'alert' : ''}" href="#queries"><span>Open queries ›</span><b>${openQ}</b><small>${scoped.reduce((a, x) => a + x.fx.queries.length, 0)} raised in total</small></a>
     <div class="kpi"><span>Avg TAT to ${esc(shortStage(s.businessStage))}</span><b>${avgTat != null ? dur(avgTat) : '–'}</b><small>benchmark ${s.tatBenchmarkDays}d</small></div>
   </div>
 
@@ -214,7 +216,7 @@ function renderList() {
     ${rows.map(({ f, fx }) => `
       <tr data-id="${f.id}">
         <td><a href="#file/${f.id}" class="name">${esc(f.applicantName || '(no name)')}</a><div class="muted">${esc(f.appId || '–')} · logged ${fmtDate(fx.loginAt)}</div></td>
-        <td data-label="Sales manager">${esc(f.salesManager || '–')}<div class="muted">${esc(f.dsaName ? 'DSA ' + f.dsaName : '')}</div></td>
+        <td data-label="Sales manager">${f.salesManager ? `<a href="#manager/${encodeURIComponent(Managers.keyOf(f.salesManager))}">${esc(f.salesManager)}</a>` : '–'}<div class="muted">${esc(f.dsaName ? 'DSA ' + f.dsaName : '')}</div></td>
         <td data-label="Loan type">${esc(f.mainLoanType || '–')}</td>
         <td class="r num" data-label="Life premium">${fx.premium ? inr(fx.premium) : '–'}</td>
         <td class="r num" data-label="Ins. loan">${fx.loan ? inr(fx.loan) : '–'}</td>
