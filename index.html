@@ -38,7 +38,9 @@ h3 { font-size: 14px; font-weight: 600; }
 .late { color: var(--critical); font-weight: 600; }
 
 /* top bar */
-.topbar { background: linear-gradient(180deg, #0f1c33 0%, var(--navy) 100%); color: #fff; position: sticky; top: 0; z-index: 20; box-shadow: 0 1px 0 rgba(255,255,255,.06), 0 4px 16px rgba(19,35,63,.18); }
+/* Solid colour on purpose: iOS tints the status-bar area by sampling the background-COLOR of the sticky header.
+   A gradient has no sampleable colour, so iOS falls back to a light tint (grey fade + black clock). */
+.topbar { background-color: var(--navy); color: #fff; position: sticky; top: 0; z-index: 20; box-shadow: 0 1px 0 rgba(255,255,255,.06), 0 4px 16px rgba(19,35,63,.18); }
 .topbar-in { max-width: 1240px; margin: 0 auto; padding: 0 20px; display: flex; align-items: center; gap: 24px; height: 56px; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: #fff; white-space: nowrap; }
 .brand:hover { text-decoration: none; }
