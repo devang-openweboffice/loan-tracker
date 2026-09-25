@@ -705,7 +705,7 @@ function renderSettings() {
       </div></section>
 
     ${PWA.standalone() ? '' : `<section class="card"><div class="card-h"><div><h2>Install as an app</h2>
-      <p>${PWA.canInstall() ? 'Add the tracker to the home screen. It then opens full screen like a normal app and works offline.' : PWA.isIOS ? 'On iPhone: open this page in Safari, tap Share, then "Add to Home Screen".' : 'Open this page in Chrome on the phone and choose "Install app" or "Add to Home screen" from the menu.'}</p></div>
+      <p>${PWA.canInstall() ? 'Add the tracker to the home screen. It then opens full screen like a normal app and works offline.' : PWA.isIOS ? 'On iPhone: ' + PWA.iosSteps() : 'Open this page in Chrome on the phone and choose "Install app" or "Add to Home screen" from the menu.'}</p></div>
       ${PWA.canInstall() ? '<button type="button" class="btn primary" id="pwa-install">Install</button>' : ''}</div><div class="pad"></div></section>`}
 
     <section class="card"><div class="card-h"><div><h2>Cloud backup</h2>

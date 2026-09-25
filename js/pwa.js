@@ -3,6 +3,10 @@
 const PWA = (() => {
   let installEvent = null;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1 && !/android/i.test(navigator.userAgent));
+  // One line of Home Screen steps for this iPhone browser (Chrome = CriOS, Edge = EdgiOS, Firefox = FxiOS).
+  const iosSteps = () => /CriOS|EdgiOS|FxiOS/.test(navigator.userAgent)
+    ? 'Tap <b>Share</b> <i class="ios-share"></i> at the right of the address bar, then <b>Add to Home Screen</b>.'
+    : 'In Safari tap <b>Share</b> <i class="ios-share"></i>, then <b>Add to Home Screen</b>.';
   const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   const canInstall = () => !!installEvent;
 
@@ -52,7 +56,7 @@ const PWA = (() => {
     try { if (localStorage.getItem('avani_install_dismissed')) return ''; } catch (e) {}
     if (canInstall()) return `<div class="install-banner"><img src="icons/icon-192.png" alt=""><div><b>Install as an app</b><span>Opens full screen from the home screen and works offline.</span></div>
       <button class="btn primary" data-pwa-install>Install</button><button class="icon-btn" data-pwa-dismiss aria-label="Dismiss">×</button></div>`;
-    if (isIOS) return `<div class="install-banner"><img src="icons/icon-192.png" alt=""><div><b>Add to your Home Screen</b><span>In Safari tap <b>Share</b> <i class="ios-share"></i> then <b>Add to Home Screen</b>.</span></div>
+    if (isIOS) return `<div class="install-banner"><img src="icons/icon-192.png" alt=""><div><b>Add to your Home Screen</b><span>${iosSteps()}</span></div>
       <button class="icon-btn" data-pwa-dismiss aria-label="Dismiss">×</button></div>`;
     if (/android/i.test(navigator.userAgent)) return `<div class="install-banner"><img src="icons/icon-192.png" alt=""><div><b>Install as an app</b><span>In Chrome tap the <b>⋮</b> menu, then <b>Install app</b> (or <b>Add to Home screen</b>).</span></div>
       <button class="icon-btn" data-pwa-dismiss aria-label="Dismiss">×</button></div>`;
@@ -90,7 +94,7 @@ const PWA = (() => {
     catch (e) { return e.name === 'AbortError'; }
   }
 
-  return { register, install, canInstall, standalone, isIOS, installBanner, bindBanner, takeShared, share, canShare: () => !!navigator.share };
+  return { register, install, canInstall, standalone, isIOS, iosSteps, installBanner, bindBanner, takeShared, share, canShare: () => !!navigator.share };
 })();
 
 PWA.register();

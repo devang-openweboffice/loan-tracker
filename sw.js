@@ -1,6 +1,6 @@
 /* Service worker: offline app shell, cached Claude SDK, and the "share photos to this app" target. */
 
-const VERSION = 'v4';
+const VERSION = 'v5';
 const SHELL_CACHE = 'shell-' + VERSION;
 const RUNTIME_CACHE = 'runtime-' + VERSION;
 const INBOX = 'share-inbox';
