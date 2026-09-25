@@ -1,12 +1,12 @@
 /* Service worker: offline app shell, cached Claude SDK, and the "share photos to this app" target. */
 
-const VERSION = 'v5';
+const VERSION = 'v6';
 const SHELL_CACHE = 'shell-' + VERSION;
 const RUNTIME_CACHE = 'runtime-' + VERSION;
 const INBOX = 'share-inbox';
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
-  './js/config.js', './js/data.js', './js/charts.js', './js/extract.js', './js/github.js', './js/lock.js', './js/app.js', './js/managers.js', './js/report.js', './js/pwa.js',
+  './js/config.js', './js/data.js', './js/charts.js', './js/extract.js', './js/ocr.js', './js/github.js', './js/lock.js', './js/app.js', './js/managers.js', './js/report.js', './js/pwa.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'
 ];
 

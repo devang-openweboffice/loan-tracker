@@ -34,7 +34,7 @@ const FORM = [
     { k: 'mainLoanRate', label: 'Interest rate (%)', type: 'number', step: '0.01' },
     { k: 'propertyLocation', label: 'Property location', span: 2 }
   ]},
-  { title: 'GCPP calculator (Bajaj)', note: 'Group Credit Protection Plus. GST and total are calculated for you.', fields: [
+  { title: 'GCPP calculator (Bajaj)', note: 'Group Credit Protection Plus. GST and total are calculated for you.', tool: 'calc', fields: [
     { k: 'sumAssured', label: 'Sum assured (₹)', type: 'number' },
     { k: 'actualSumAssured', label: 'Actual sum assured (₹)', type: 'number' },
     { k: 'coverTerm', label: 'Term of cover (years)', type: 'number' },
@@ -289,14 +289,14 @@ function renderForm(id) {
   </div>
   <section class="card upload-card" id="upload">
     <div class="card-h"><span class="step">📷</span><div><h2>Fill from photos</h2>
-      <p>Upload the photos of the file (cover sheet, sanction letter, enrollment form, GCPP calculator). Claude reads them and fills the form below for you to check.${f ? ' Only empty fields are filled.' : ''}</p></div></div>
+      <p>Add the photos of the file. The free reader on this phone reads the <b>printed</b> pages (sanction letter and GCPP calculator) and fills the form below. Handwritten details (sales manager, DSA, PAN, mobile) you type yourself. Photos never leave your phone for reading.${f ? ' Only empty fields are filled.' : ''}</p></div></div>
     <label class="dropzone" id="dz">
       <input type="file" id="photo-input" accept="image/*" multiple hidden>
       <b class="only-desk">Drop photos here or click to choose</b><b class="only-phone">Tap to take photos or pick from gallery</b><span>All pages of one file at a time</span>
     </label>
     <div class="thumbs" id="thumbs"></div>
     <div class="upload-actions">
-      <span class="muted" id="ai-status">${s.apiKey ? '' : 'Photo reading is not set up on this phone yet (ask Devang). You can still attach photos and fill the form below yourself.'}</span>
+      <span class="muted" id="ai-status"></span>
       <button type="button" class="btn primary" id="ai-read" disabled>Read documents</button>
     </div>
   </section>
@@ -307,6 +307,10 @@ function renderForm(id) {
       <section class="card">
         <div class="card-h"><span class="step">${i + 1}</span><div><h2>${esc(sec.title)}</h2>${sec.note ? `<p>${esc(sec.note)}</p>` : ''}</div></div>
         <div class="grid">${sec.fields.map(field).join('')}</div>
+        ${sec.tool === 'calc' ? `<div class="calc-check">
+          <button type="button" class="btn calc-btn" id="calc-btn"><span class="calc-ico">✓</span> Check calculations</button>
+          <span class="muted">Checks the GCPP premium, GST, sum assured, and the sanction letter's loan amount, ROI and EMI.</span>
+          <div id="calc-result"></div></div>` : ''}
       </section>`).join('')}
     ${f ? '' : `
       <section class="card">
@@ -347,8 +351,80 @@ function renderForm(id) {
     if (['basicPremium', 'gst', 'totalPremium', 'propertyInsPremium', 'lifeInsPremium', 'healthInsPremium', 'insLoanAmount', 'repoRate', 'spread', 'roi', 'installments', 'mainLoanTenure'].includes(changed))
       set('emi', Math.round(emi(get('insLoanAmount'), get('roi'), get('installments'))));
   }
+  /* --- "Check calculations": green light, or exactly which number is off with a one-tap fix --- */
+  // Each check says which number to correct: the one that is most likely wrong, never the bank's own figures
+  // (sanction loan amount, REPO, spread). A check that depends on a red item above waits for that fix first.
+  function runChecks() {
+    const v = k => { const x = get(k); return x === '' || x == null ? null : num(x); };
+    const r2 = x => Math.round(x * 100) / 100;
+    const out = [], badKeys = new Set();
+    const yrs = x => x + (x === 1 ? ' year' : ' years'), pct = x => x + '%', months = x => x + ' months';
+    /* o: { key: field to correct, have: its value, want: correct value, uses: fields this check relies on, fmt, tol, why } */
+    const add = (label, o) => {
+      const fmt = o.fmt || inr, tol = o.tol ?? 1;
+      if (o.want == null || isNaN(o.want)) { out.push({ label, state: 'skip', msg: 'Fill the related fields to check this' }); return; }
+      const blocked = (o.uses || []).some(k => badKeys.has(k));
+      const ok = o.have != null && Math.abs(o.have - o.want) <= tol;
+      if (ok) { out.push({ label, state: 'ok', key: o.key, msg: fmt(o.have) }); return; }
+      badKeys.add(o.key);
+      if (blocked) { out.push({ label, state: 'bad', key: o.key, msg: 'Fix the red item above first, then check again' }); return; }
+      const name = o.name ? o.name + ' ' : '';
+      out.push({ label, state: 'bad', key: o.key, fix: o.want,
+        msg: (o.have == null ? `${name}is empty` : `${name}is ${fmt(o.have)}`) + `, should be ${fmt(o.want)}${o.why ? ' (' + o.why + ')' : ''}` });
+    };
+    const basic = v('basicPremium'), gst = v('gst'), total = v('totalPremium'), sa = v('sumAssured');
+    const prop = v('propertyInsPremium'), life = v('lifeInsPremium'), health = v('healthInsPremium') || 0;
+    const repo = v('repoRate'), spread = v('spread'), roi = v('roi'), loan = v('insLoanAmount'), inst = v('installments'), tenure = v('mainLoanTenure');
+
+    add('GST = 18% of basic premium', { key: 'gst', have: gst, want: basic != null ? Math.round(basic * 0.18) : null, tol: 2, name: 'GST' });
+    add('Premium for app form = basic premium + GST', { key: 'totalPremium', have: total, want: basic != null && gst != null ? basic + gst : null, tol: 2, uses: ['gst'], name: 'Premium' });
+    if (get('premiumFinanced') !== 'No')
+      add('Actual sum assured = sum assured + premium (premium financed)', { key: 'actualSumAssured', have: v('actualSumAssured'), want: sa != null && total != null ? sa + total : null, uses: ['totalPremium', 'gst'], name: 'Actual sum assured' });
+    if (get('dob') && get('gcppDate')) {
+      const ref = new Date(get('gcppDate')), b = new Date(get('dob'));
+      let a = ref.getFullYear() - b.getFullYear(); if (ref < new Date(ref.getFullYear(), b.getMonth(), b.getDate())) a--;
+      add('Age on the calculation date', { key: 'age', have: v('age'), want: a, fmt: yrs, tol: 0, name: 'Age' });
+    }
+    add('Life insurance on sanction letter = GCPP premium', { key: 'lifeInsPremium', have: life, want: total, uses: ['totalPremium', 'gst'], name: 'Life insurance' });
+    // The loan amount is the bank's figure: when the sum doesn't match, the property premium is what gets corrected.
+    if (loan != null) add('Insurance loan = property + life + health', { key: 'propertyInsPremium', have: prop, want: life != null ? loan - life - health : null,
+      uses: ['lifeInsPremium', 'totalPremium', 'gst'], name: 'Property insurance', why: 'loan − life − health' });
+    else add('Insurance loan = property + life + health', { key: 'insLoanAmount', have: loan, want: prop != null && life != null ? prop + life + health : null, uses: ['lifeInsPremium'], name: 'Insurance loan' });
+    add('ROI = REPO rate + spread', { key: 'roi', have: roi, want: repo != null && spread != null ? r2(repo + spread) : null, fmt: pct, tol: 0.01, name: 'ROI' });
+    add('EMI for this loan amount, ROI and no. of EMIs', { key: 'emi', have: v('emi'), want: loan && roi && inst ? Math.round(emi(loan, roi, inst)) : null, tol: 2,
+      uses: ['roi', 'insLoanAmount', 'installments'], name: 'EMI' });
+    if (tenure && inst) add('No. of EMIs = main loan tenure × 12', { key: 'installments', have: inst, want: tenure * 12, fmt: months, tol: 0, name: 'No. of EMIs', why: yrs(tenure) + ' × 12' });
+    const cover = v('coverTerm');
+    if (cover && tenure) out.push({ label: 'Cover term is within the loan tenure', state: cover <= tenure ? 'ok' : 'bad', msg: `${yrs(cover)} cover, ${yrs(tenure)} loan` });
+    return out;
+  }
+  function showChecks() {
+    const res = runChecks(), bad = res.filter(r => r.state === 'bad'), ok = res.filter(r => r.state === 'ok');
+    $$('.fld.calc-bad').forEach(el => el.classList.remove('calc-bad'));
+    bad.forEach(r => { const el = r.key && form.elements[r.key]; if (el) el.closest('.fld').classList.add('calc-bad'); });
+    const icon = { ok: '✓', bad: '✕', skip: '–' };
+    $('#calc-result').innerHTML = `
+      <div class="calc-banner ${bad.length ? 'bad' : ok.length ? 'ok' : 'skip'}">
+        <span class="calc-light"></span>
+        <b>${bad.length ? `${bad.length} calculation${bad.length > 1 ? 's need' : ' needs'} attention` : ok.length ? `All ${ok.length} calculations are correct` : 'Nothing to check yet'}</b>
+        ${bad.some(r => r.fix != null) ? '<button type="button" class="btn primary" id="calc-fix-all">Fix all</button>' : ''}
+      </div>
+      <ul class="calc-list">${res.map((r, i) => `<li class="${r.state}"><i>${icon[r.state]}</i><div><b>${esc(r.label)}</b><span>${esc(r.msg)}</span></div>
+        ${r.state === 'bad' && r.fix != null ? `<button type="button" class="btn" data-fix="${i}">Use ${esc(String(r.fix))}</button>` : ''}</li>`).join('')}</ul>`;
+    const apply = r => { set(r.key, r.fix); const el = form.elements[r.key]; el.closest('.fld').classList.remove('ai-unsure', 'calc-bad'); el.closest('.fld').classList.add('ai-filled'); };
+    $$('[data-fix]').forEach(b => b.onclick = () => { apply(res[+b.dataset.fix]); showChecks(); });
+    const fa = $('#calc-fix-all');
+    if (fa) fa.onclick = () => {
+      // fixes can depend on each other (GST → total → life premium → loan → EMI): repeat until stable
+      for (let pass = 0; pass < 5; pass++) { const todo = runChecks().filter(r => r.state === 'bad' && r.fix != null); if (!todo.length) break; apply(todo[0]); }
+      showChecks();
+    };
+  }
+  $('#calc-btn').onclick = () => { showChecks(); $('#calc-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); };
+
   form.addEventListener('input', e => {
     if (!e.target.name) return;
+    if ($('#calc-result').innerHTML) showChecks();   // keep the result live once shown
     e.target.closest('.fld')?.classList.remove('ai-filled', 'ai-unsure');
     recalc(e.target.name);
   });
@@ -363,14 +439,14 @@ function renderForm(id) {
   function drawThumbs() {
     $('#thumbs').innerHTML = photos.map((p, i) => `<figure><img src="${p.dataUrl}" alt="${esc(p.name)}"><button type="button" data-rm="${i}" aria-label="Remove photo">×</button></figure>`).join('');
     $$('[data-rm]').forEach(b => b.onclick = () => { photos.splice(+b.dataset.rm, 1); drawThumbs(); });
-    readBtn.disabled = !photos.length || !s.apiKey;
+    readBtn.disabled = !photos.length;
   }
   async function addPhotos(list) {
     const imgs = Array.from(list).filter(x => x.type.startsWith('image/'));
     if (!imgs.length) return;
     status.textContent = 'Preparing photos…';
     for (const file of imgs) { try { photos.push(await Extract.prepare(file)); } catch (e) { toast('Could not open ' + file.name); } }
-    status.innerHTML = s.apiKey ? `${photos.length} photo${photos.length > 1 ? 's' : ''} ready. Click <b>Read documents</b>.` : 'Photos will be saved with the file. Photo reading is not set up on this phone yet (ask Devang), so please fill the form below yourself.';
+    status.innerHTML = `${photos.length} photo${photos.length > 1 ? 's' : ''} ready. Tap <b>Read documents</b>.`;
     drawThumbs();
   }
   $('#photo-input').onchange = e => { addPhotos(e.target.files); e.target.value = ''; };
@@ -381,18 +457,18 @@ function renderForm(id) {
 
   readBtn.onclick = async () => {
     readBtn.disabled = true; readBtn.textContent = 'Reading…';
-    status.innerHTML = '<span class="spinner"></span> Claude is reading the documents. This can take up to a minute.';
+    status.innerHTML = '<span class="spinner"></span> Reading the documents on this phone. This takes about a minute; keep the app open.';
     try {
-      const data = await Extract.read(photos, s.apiKey);
+      const data = await OCR.read(photos, msg => { status.innerHTML = '<span class="spinner"></span> ' + esc(msg); });
       const n = applyExtracted(data);
       const unsure = (data.uncertainFields || []).length;
-      status.innerHTML = `✓ Filled <b>${n}</b> fields from ${esc((data.documentsFound || []).join(', ') || 'the photos')}. ` +
+      status.innerHTML = `✓ Filled <b>${n}</b> fields from the ${esc((data.documentsFound || []).join(', ') || 'the photos')}. ` +
         (unsure ? `<span class="unsure-note">${unsure} field${unsure > 1 ? 's are' : ' is'} marked in orange: please double-check ${unsure > 1 ? 'them' : 'it'}.</span>` : 'Please check the values before saving.') +
         (data.notes ? `<br><span class="muted">Note: ${esc(data.notes)}</span>` : '');
       form.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
-      status.innerHTML = `<span class="late">${esc(err.message === 'NO_KEY' ? 'Photo reading is not set up on this phone yet (ask Devang).' : err.message)}</span>`;
-    } finally { readBtn.textContent = 'Read documents'; readBtn.disabled = !photos.length || !s.apiKey; }
+      status.innerHTML = `<span class="late">${esc(err.message)}</span>`;
+    } finally { readBtn.textContent = 'Read documents'; readBtn.disabled = !photos.length; }
   };
 
   function applyExtracted(d) {
@@ -713,7 +789,7 @@ function renderSettings() {
       ${GH.enabled() ? '<button type="button" class="btn" id="gh-sync">Sync now</button>' : ''}</div><div class="pad"></div></section>
 
     <section class="card"><div class="card-h"><div><h2>Photo reading</h2>
-      <p>${s.apiKey ? '✓ Ready. "Fill from photos" reads your documents automatically.' : 'Not set up on this phone yet. Ask Devang to set it up. Until then you can still attach photos and fill the form yourself.'}</p></div></div><div class="pad"></div></section>
+      <p>✓ Free, and runs on this phone: nothing to set up, no internet needed after the first use. It reads the printed pages (sanction letter and GCPP calculator). Handwritten pages are typed by hand.</p></div></div><div class="pad"></div></section>
 
     <section class="card"><div class="card-h"><div><h2>Monthly target</h2><p>Set a target for a specific month; months without one use the default.</p></div></div>
       <div class="grid">
@@ -758,11 +834,7 @@ function renderSettings() {
     </div></section>
 
   <section class="card" id="gh-admin" hidden><div class="card-h"><div><h2>Admin setup</h2>
-    <p>For Devang only. Both keys below are saved on this device only; they are never synced, backed up or put in the app's code.</p></div></div>
-    <div class="card-h"><div><h3>Photo reading: Claude API key</h3>
-    <p>Create one at console.anthropic.com → API Keys (setting a monthly spend limit there is a good idea). Photos are sent only to Anthropic's API when "Read documents" is tapped.</p></div></div>
-    <div class="grid"><label class="fld span3"><span>Claude API key</span><input id="ai-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(s.apiKey || '')}"></label></div>
-    <div class="row-actions"><button type="button" class="btn primary" id="ai-save">Save & test</button><button type="button" class="btn danger-ghost" id="ai-clear">Remove</button><span class="muted" id="ai-admin-status"></span></div>
+    <p>For Devang only. The token below is saved on this device only; it is never synced, backed up or put in the app's code.</p></div></div>
     <div class="card-h"><div><h3>Cloud backup: GitHub token</h3>
     <p>Repo: <b>${esc(APP_CONFIG.githubOwner)}/${esc(APP_CONFIG.githubRepo)}</b> (set in js/config.js). Paste a fine-grained token with access to only that private repo and <b>Contents: Read and write</b>. It is stored only on this device.</p></div></div>
     <div class="grid"><label class="fld span3"><span>GitHub access token</span><input id="gh-token" type="password" autocomplete="off" placeholder="github_pat_…" value="${esc(s.ghToken || '')}"></label></div>
@@ -791,7 +863,7 @@ function renderSettings() {
     el.tFiles.value = tt.files; el.tPremium.value = tt.premium; el.tLoan.value = tt.loan;
   };
   const ib = $('#pwa-install'); if (ib) ib.onclick = async () => { await PWA.install(); renderSettings(); };
-  // Tap the version label 5 times to open the admin setup (Claude key + GitHub token; keeps them out of Avani's way).
+  // Tap the version label 5 times to open the admin setup (GitHub token; keeps it out of Avani's way).
   let taps = 0, tapTimer;
   $('#app-version').onclick = () => {
     taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { taps = 0; }, 1500);
@@ -816,18 +888,6 @@ function renderSettings() {
     try { await Lock.change(f.old.value, f.new1.value); e.target.reset(); st.textContent = '✓ Password changed'; }
     catch (err) { st.innerHTML = '<span class="late">' + esc(err.message) + '</span>'; }
   };
-  const aiStatus = msg => { $('#ai-admin-status').innerHTML = msg; };
-  $('#ai-save').onclick = async () => {
-    const key = $('#ai-key').value.trim();
-    if (!key) { aiStatus('<span class="late">Paste the key first.</span>'); return; }
-    aiStatus('<span class="spinner"></span> Checking the key…');
-    try {
-      await Extract.testKey(key);
-      const ss = Store.settings(); ss.apiKey = key; Store.saveSettings(ss);
-      aiStatus('✓ Key works. Photo reading is ready on this device.');
-    } catch (e) { aiStatus('<span class="late">' + esc(e.message) + '</span>'); }
-  };
-  $('#ai-clear').onclick = () => { const ss = Store.settings(); ss.apiKey = ''; Store.saveSettings(ss); renderSettings(); toast('Claude API key removed from this device'); };
   $('#gh-clear').onclick = () => { const ss = Store.settings(); ss.ghToken = ''; Store.saveSettings(ss); renderSettings(); toast('Cloud backup disconnected on this device'); };
   const gs = $('#gh-sync');
   if (gs) gs.onclick = async () => {
