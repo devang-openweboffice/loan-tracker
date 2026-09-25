@@ -25,7 +25,11 @@
 html, body { margin: 0; }
 /* The page's base colour is the header navy: iOS paints the status-bar area and the pull-down bounce with it,
    so the top of the screen is one solid colour like a native app. The content area keeps its light background. */
-html { background: var(--navy); }
+html { background: var(--navy); scroll-padding-top: 72px; }
+body { padding-top: 56px; }                 /* room for the fixed header */
+body.exported { padding-top: 0; }
+/* Solid navy strip fixed behind the phone's status bar (clock/battery). iOS reads fixed content there. */
+#status-bg { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background-color: var(--navy); z-index: 25; pointer-events: none; }
 body { font: 14px/1.5 var(--font); color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased; min-height: 100vh; min-height: 100dvh; }
 a { color: var(--accent-ink); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -40,7 +44,7 @@ h3 { font-size: 14px; font-weight: 600; }
 /* top bar */
 /* Solid colour on purpose: iOS tints the status-bar area by sampling the background-COLOR of the sticky header.
    A gradient has no sampleable colour, so iOS falls back to a light tint (grey fade + black clock). */
-.topbar { background-color: var(--navy); color: #fff; position: sticky; top: 0; z-index: 20; box-shadow: 0 1px 0 rgba(255,255,255,.06), 0 4px 16px rgba(19,35,63,.18); }
+.topbar { background-color: var(--navy); color: #fff; position: fixed; top: 0; left: 0; right: 0; z-index: 20; box-shadow: 0 1px 0 rgba(255,255,255,.06), 0 4px 16px rgba(19,35,63,.18); }
 .topbar-in { max-width: 1240px; margin: 0 auto; padding: 0 20px; display: flex; align-items: center; gap: 24px; height: 56px; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: #fff; white-space: nowrap; }
 .brand:hover { text-decoration: none; }
@@ -407,6 +411,8 @@ body.locked .topbar, body.locked .tabbar, body.locked #view { visibility: hidden
   :root { --tabbar-h: 62px; --safe-b: env(safe-area-inset-bottom, 0px); }
   html { -webkit-tap-highlight-color: transparent; }
   body { overscroll-behavior-y: none; padding-bottom: calc(var(--tabbar-h) + var(--safe-b)); }
+  html { color-scheme: dark; scroll-padding-top: calc(64px + env(safe-area-inset-top, 0px)); }   /* tells iOS the top of the app is dark → white clock */
+  body { color-scheme: light; padding-top: calc(52px + env(safe-area-inset-top, 0px)); }         /* content, inputs and pickers stay light */
   .topbar { padding-top: env(safe-area-inset-top, 0px); }
   .topbar-in { height: 52px; padding: 0 16px; }
   .brand { font-size: 17px; letter-spacing: -.01em; }
@@ -506,7 +512,7 @@ body.locked .topbar, body.locked .tabbar, body.locked #view { visibility: hidden
 @media print {
   html { background: #fff; }
   body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .topbar, .tabbar, .update-bar, .no-print, #toast, #viz-tip { display: none !important; }
+  .topbar, .tabbar, .update-bar, .no-print, #toast, #viz-tip, #status-bg { display: none !important; }
   body { padding: 0 !important; }
   main#view { padding: 0; max-width: none; }
   .report { box-shadow: none; border-radius: 0; max-width: none; }
@@ -520,6 +526,7 @@ body.locked .topbar, body.locked .tabbar, body.locked #view { visibility: hidden
 </style>
 </head>
 <body>
+  <div id="status-bg" aria-hidden="true"></div>
   <header class="topbar">
     <div class="topbar-in">
       <a class="brand" href="#files"><img class="logo" src="icons/icon-192.png" alt=""><span>Loan Insurance Tracker<small>Bajaj GCPP · Axis Bank files</small></span></a>
