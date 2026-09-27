@@ -1,8 +1,8 @@
-/* Service worker: offline app shell, cached Claude SDK, and the "share photos to this app" target. */
+/* Service worker: offline app shell, the cached photo reader (app/vendor, ~45 MB), and the "share photos to this app" target. */
 
-const VERSION = 'v16';
+const VERSION = 'v18';
 const SHELL_CACHE = 'shell-' + VERSION;
-const RUNTIME_CACHE = 'runtime-cdn';   // fixed name: the ~7 MB reader files survive app updates
+const RUNTIME_CACHE = 'runtime-cdn';   // fixed name: the reader files survive app updates (not re-downloaded)
 const INBOX = 'share-inbox';
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
@@ -51,7 +51,13 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Own files and the Claude SDK from the CDN: cache first, refresh in the background.
+  // Photo reader engine + models (~45 MB): cache first in the long-lived cache, never refreshed in the background.
+  if (url.origin === location.origin && url.pathname.includes('/vendor/')) {
+    e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => { if (res.ok) cachePut(RUNTIME_CACHE, req, res.clone()); return res; })));
+    return;
+  }
+
+  // Own files and CDN files: cache first, refresh in the background.
   if (url.origin === location.origin || url.hostname === 'cdn.jsdelivr.net') {
     e.respondWith((async () => {
       const cached = await caches.match(req);

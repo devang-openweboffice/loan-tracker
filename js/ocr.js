@@ -1,79 +1,54 @@
-/* Free photo reader: Tesseract OCR running on the phone itself (no account, no key, photos never leave the device).
-   Reads the PRINTED pages: the Axis insurance sanction letter and the Bajaj GCPP calculator.
-   Handwritten pages (cover sheet, enrollment form) are recognised but their handwriting is left for Avani to type. */
+/* Free photo reader: PaddleOCR (PP-OCRv5, official @paddleocr/paddleocr-js npm package) running on the phone itself.
+   No account, no key, no cost; photos never leave the device. The engine + models (~45 MB) are served from this app
+   (app/vendor/, built by ../ocr-build) and downloaded once, then cached for offline use.
+   Reads the printed sanction letter and GCPP calculator well, and picks up what it can from handwritten pages
+   (PAN, App IDs, tenure, sales manager); handwriting-based values are always marked for checking. */
 
 const OCR = (() => {
-  const CDN = 'https://cdn.jsdelivr.net/npm/';
-  const PATHS = {
-    workerPath: CDN + 'tesseract.js@5.1.1/dist/worker.min.js',
-    corePath: CDN + 'tesseract.js-core@5',
-    langPath: CDN + '@tesseract.js-data/eng/4.0.0_best_int'
-  };
-  let libP, workerP, onProgress = null;
+  const VENDOR = new URL('vendor/', document.baseURI).href;
+  let engineP = null;
 
-  const lib = () => libP || (libP = new Promise((res, rej) => {
-    if (window.Tesseract) return res();
-    const s = document.createElement('script');
-    s.src = CDN + 'tesseract.js@5.1.1/dist/tesseract.min.js';
-    s.onload = res;
-    s.onerror = () => { libP = null; rej(new Error('Could not download the free reader. It needs internet the first time only.')); };
-    document.head.appendChild(s);
-  }));
-  async function worker() {
-    await lib();
-    if (!workerP) workerP = Tesseract.createWorker('eng', 1, Object.assign({ logger: m => onProgress && onProgress(m) }, PATHS))
-      .catch(e => { workerP = null; throw new Error('The free reader could not start: ' + (e.message || e)); });
-    return workerP;
+  function engine(say) {
+    if (!engineP) engineP = (async () => {
+      say('Loading the photo reader… (first time only: about 45 MB, Wi-Fi recommended)');
+      const { PaddleOCR } = await import(VENDOR + 'paddleocr.bundle.mjs');
+      say('Preparing the reader…');
+      return PaddleOCR.create({
+        textDetectionModelName: 'PP-OCRv5_mobile_det', textDetectionModelAsset: { url: VENDOR + 'models/PP-OCRv5_mobile_det_onnx_infer.tar' },
+        textRecognitionModelName: 'PP-OCRv5_mobile_rec', textRecognitionModelAsset: { url: VENDOR + 'models/PP-OCRv5_mobile_rec_onnx_infer.tar' },
+        ortOptions: { backend: 'wasm', wasmPaths: VENDOR + 'ort/', numThreads: 1 }
+      });
+    })().catch(e => { engineP = null; throw new Error('The photo reader could not start (' + (e && e.message || e) + '). It needs internet the first time.'); });
+    return engineP;
   }
 
-  /* ---------- image clean-up: grayscale, enlarge, optional rotation / black-white ---------- */
+  /* ---------- images ---------- */
   function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
-  function prep(img, rotate = 0, binarize = false) {
-    const scale = Math.min(2, 2400 / Math.max(img.width, img.height));
+  // Rotated copy (for pages photographed sideways), at most 1600px on the long side.
+  function prep(img, rotate = 0) {
+    const scale = Math.min(1, 2000 / Math.max(img.width, img.height));
     const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
     const c = document.createElement('canvas');
     c.width = rotate % 180 ? h : w; c.height = rotate % 180 ? w : h;
     const g = c.getContext('2d');
     g.translate(c.width / 2, c.height / 2); g.rotate(rotate * Math.PI / 180); g.drawImage(img, -w / 2, -h / 2, w, h);
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    const d = g.getImageData(0, 0, c.width, c.height), p = d.data, n = c.width * c.height;
-    const gray = new Uint8ClampedArray(n);
-    for (let i = 0; i < n; i++) gray[i] = 0.299 * p[i * 4] + 0.587 * p[i * 4 + 1] + 0.114 * p[i * 4 + 2];
-    let thr = -1;
-    if (binarize) {   // Otsu threshold
-      const hist = new Array(256).fill(0); gray.forEach(v => hist[v]++);
-      let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
-      let sB = 0, wB = 0, best = 0;
-      for (let t = 0; t < 256; t++) {
-        wB += hist[t]; if (!wB) continue; const wF = n - wB; if (!wF) break; sB += t * hist[t];
-        const v = wB * wF * (sB / wB - (sum - sB) / wF) ** 2; if (v > best) { best = v; thr = t; }
-      }
-    }
-    for (let i = 0; i < n; i++) { const v = thr < 0 ? gray[i] : (gray[i] > thr ? 255 : 0); p[i * 4] = p[i * 4 + 1] = p[i * 4 + 2] = v; }
-    g.putImageData(d, 0, 0);
     return c;
   }
 
-  // Big upscale + local threshold: removes grey table backgrounds and box shading, keeps dark text.
-  function adaptive(img, rotate = 0) {
-    const base = prep(img, rotate);   // grayscale, rotated
-    const scale = Math.min(1.7, 4000 / Math.max(base.width, base.height));
-    const W = Math.round(base.width * scale), H = Math.round(base.height * scale);
-    const c = document.createElement('canvas'); c.width = W; c.height = H;
-    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(base, 0, 0, W, H);
-    const d = g.getImageData(0, 0, W, H), p = d.data, n = W * H, gray = new Float32Array(n);
-    for (let i = 0; i < n; i++) gray[i] = p[i * 4];
-    const I = new Float64Array((W + 1) * (H + 1));
-    for (let y = 0; y < H; y++) { let row = 0; for (let x = 0; x < W; x++) { row += gray[y * W + x]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + row; } }
-    const rad = Math.max(12, Math.round(W / 90));
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const x0 = Math.max(0, x - rad), x1 = Math.min(W, x + rad + 1), y0 = Math.max(0, y - rad), y1 = Math.min(H, y + rad + 1);
-      const mean = (I[y1 * (W + 1) + x1] - I[y0 * (W + 1) + x1] - I[y1 * (W + 1) + x0] + I[y0 * (W + 1) + x0]) / ((x1 - x0) * (y1 - y0));
-      const v = gray[y * W + x] < mean * 0.85 ? 0 : 255, k = (y * W + x) * 4;
-      p[k] = p[k + 1] = p[k + 2] = v;
+  // PaddleOCR returns separate text boxes; join boxes on the same row (left → right) into lines,
+  // so "Sum Assured (Rs.) :" and "2,100,000" become one line the parsers understand.
+  function toText(items) {
+    const P = p => Array.isArray(p) ? { x: p[0], y: p[1] } : p;
+    const boxes = items.filter(i => i && i.text && i.text.trim() && i.poly).map(i => {
+      const pts = (i.poly.points || i.poly).map(P), xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+      return { t: i.text.trim(), x: Math.min(...xs), y: (Math.min(...ys) + Math.max(...ys)) / 2, h: Math.max(8, Math.max(...ys) - Math.min(...ys)) };
+    }).sort((a, b) => a.y - b.y);
+    const rows = [];
+    for (const b of boxes) {
+      const r = rows.find(r => Math.abs(r.y - b.y) < Math.min(r.h, b.h) * 0.6);
+      if (r) { r.items.push(b); r.y = (r.y * (r.items.length - 1) + b.y) / r.items.length; } else rows.push({ y: b.y, h: b.h, items: [b] });
     }
-    g.putImageData(d, 0, 0);
-    return c;
+    return rows.sort((a, b) => a.y - b.y).map(r => r.items.sort((a, b) => a.x - b.x).map(b => b.t).join(' ')).join('\n');
   }
 
   /* ---------- which page is this? ---------- */
@@ -160,7 +135,7 @@ const OCR = (() => {
   }
 
   function parseGcpp(t, out, unsure) {
-    const cust = t.match(/Customer\s*Name\s*:?\s*([A-Za-z][A-Za-z .]{2,}?)(?=\s{2,}|\s*Product|\s*\||$)/im);
+    const cust = t.match(/Customer\s*Name\s*:?\s*([A-Za-z][A-Za-z .]{2,}?)(?=\s+[A-Za-z]+\s*:|\s{2,}|\s*\||$)/im);
     if (cust && !out.applicantName) { out.applicantName = titleCase(cleanName(cust[1])); unsure.add('applicantName'); }
     const set = (k, v, ok = () => true) => { if (v != null && out[k] == null && ok(v)) out[k] = v; };
     set('sumAssured', near(t, /Sum\s*Assured\s*\(?Rs\.?\)?\s*:?/i), v => v >= 10000);
@@ -172,7 +147,8 @@ const OCR = (() => {
     set('totalPremium', near(t, /Premium\s*to\s*be\s*fil+ed\s*in\s*App\s*form\s*:?/i, { maxGap: 6 }), v => v >= 100);
     const prod = t.match(/Product\s*:?\s*\|?\s*(Home\s*Loan|LAP|ASHA|Top\s*-?\s*up)/i);
     if (prod && !out.mainLoanType) out.mainLoanType = /home/i.test(prod[1]) ? 'Home Loan (HL)' : /top/i.test(prod[1]) ? 'Top-up' : prod[1].toUpperCase();
-    const rider = t.match(/Rider\s*:?\s*\|?\s*(ACI|APTD|None)\b/i); if (rider) out.rider = rider[1].toUpperCase() === 'NONE' ? 'None' : rider[1].toUpperCase();
+    const rider = t.match(/Rider\s*:?\s*\|?\s*(AC[IL1]\s*\+\s*APTP?D|APTP?D|AC[IL1]|No(?:ne)?)\b/i);
+    if (rider && out.rider == null) { const v = rider[1].toUpperCase(); out.rider = /\+/.test(v) ? 'ACI + APTD' : /APT/.test(v) ? 'APTD' : /^NO/.test(v) ? 'None' : 'ACI'; }
     const cover = t.match(/Cover\s*:?\s*\|?\s*(Level|Reducing)/i); if (cover) out.coverType = cover[1][0].toUpperCase() + cover[1].slice(1).toLowerCase();
     const fin = t.match(/Premium\s*Financed\s*:?\s*\|?\s*(Yes|No)\b/i); if (fin) out.premiumFinanced = fin[1][0].toUpperCase() + fin[1].slice(1).toLowerCase();
     const mph = t.match(/\b((?:59|37)\d{7})\b/);
@@ -238,51 +214,92 @@ const OCR = (() => {
     }
   }
 
+  /* ---------- handwritten pages: only the reliable patterns, always marked for checking ---------- */
+  const lev = (a, b) => { const d = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[a.length][b.length]; };
+  const squash = s => (s || '').toLowerCase().replace(/[^a-z]/g, '');
+  // "Ravl. patel" → "Ravi Patel" when it is close to a sales manager she already works with
+  function matchName(raw, known) {
+    const r = squash(raw); if (r.length < 4) return null;
+    let best = null, bestScore = 0;
+    for (const k of known) { const s = 1 - lev(r, squash(k)) / Math.max(r.length, squash(k).length); if (s > bestScore) { best = k; bestScore = s; } }
+    return bestScore >= 0.72 ? best : null;
+  }
+  function parsePan(t) {
+    const m = t.replace(/[\s.:]/g, ' ').match(/\b([A-Z]{5}[0-9]{4}[A-Z])\b/); return m ? m[1] : null;
+  }
+  function parseCover(t, out, unsure, known) {
+    const put = (k, v) => { if (v != null && v !== '' && out[k] == null) { out[k] = v; unsure.add(k); } };
+    put('pan', parsePan(t.toUpperCase()));
+    const old = t.match(/OLD\s*APP\.?\s*[IT1l|]?\s*[DT]?\s*[:.\-]*\s*(\d{8})/i); if (old) put('oldAppId', old[1]);
+    const ids = lines(t).filter(l => !/OLD/i.test(l)).join(' ').match(/(?:^|\D)(3\d{7})(?!\d)/g) || [];
+    const clean = ids.map(x => x.replace(/\D/g, '')).filter(x => !old || x !== old[1]);
+    if (clean.length) put('appId', clean[clean.length - 1]);
+    const mon = t.match(/\b(\d{2,3})\s*M[OA0]U?N?TH/i), yrs = t.match(/\b(\d{1,2})\s*YEAR/i);
+    if (mon && +mon[1] >= 12 && +mon[1] <= 480) { put('installments', +mon[1]); if (+mon[1] % 12 === 0) put('mainLoanTenure', +mon[1] / 12); }
+    else if (yrs && +yrs[1] >= 1 && +yrs[1] <= 40) { put('mainLoanTenure', +yrs[1]); put('installments', +yrs[1] * 12); }
+    const rate = t.match(/RATE[^\n%]{0,12}?(\d{1,2}(?:\.\d{1,2})?)\s*%/i) || t.match(/\b(\d{1,2}(?:\.\d{1,2})?)\s*%/);
+    if (rate && +rate[1] >= 5 && +rate[1] <= 20) put('roi', +rate[1]);
+    for (const l of lines(t)) {
+      if (/MANAGER/i.test(l)) { const v = l.replace(/.*MANAGER\s*:?/i, '').replace(/TEAM\s*LEADER.*/i, ''); put('salesManager', matchName(v, known)); }
+    }
+    if (out.salesManager == null) for (const l of lines(t)) { const m = matchName(l, known); if (m) { put('salesManager', m); break; } }
+  }
+  function parseEnrollment(t, out, unsure) {
+    const put = (k, v) => { if (v != null && v !== '' && out[k] == null) { out[k] = v; unsure.add(k); } };
+    put('pan', parsePan(t.toUpperCase()));
+    const phones = (t.replace(/\*[^*\n]*\*/g, ' ').match(/(?<![\d*])[6-9]\d{9}(?![\d*])/g) || []);   // skip the form's barcode (*619…*)
+    if (phones[0]) put('mobile', phones[0]); if (phones[1]) put('nomineeMobile', phones[1]);
+    const mail = t.match(/[A-Za-z0-9._-]{3,}\s*@\s*g\s*m\s*a\s*[i1l]\s*l\s*\.\s*c\s*o\s*m/i); if (mail) put('email', mail[0].replace(/\s+/g, '').replace(/@gma[1l]l/i, '@gmail').toLowerCase());
+  }
+
   /* ---------- main entry: photos → same shape as the form fields ---------- */
-  async function read(photos, progress) {
+  async function read(photos, progress, opts = {}) {
     const say = msg => progress && progress(msg);
-    say('Starting the free reader… (the first time it downloads about 7 MB)');
-    onProgress = m => { if (m.status && /load|init/i.test(m.status) && m.progress != null) say(`Preparing the reader… ${Math.round(m.progress * 100)}%`); };
-    const w = await worker();
-    onProgress = null;
+    const ocr = await engine(say);
+    const known = opts.knownSalesManagers || [];
     const out = { _notes: [] }, unsure = new Set(), found = [];
     const names = { sanction: 'sanction letter', gcpp: 'GCPP calculator', enrollment: 'enrollment form', cover: 'cover sheet' };
 
+    const pages = [];
     for (let i = 0; i < photos.length; i++) {
-      const img = await loadImg(photos[i].dataUrl);
-      let best = { score: -1 };
-      for (const rot of [0, 270, 90]) {
-        say(`Reading photo ${i + 1} of ${photos.length}${rot ? ' (trying it turned sideways)' : ''}…`);
-        const { data } = await w.recognize(prep(img, rot));
-        const c = classify(data.text);
-        if (c.score > best.score) best = Object.assign(c, { text: data.text, rot });
-        if (c.score >= 3 || (c.score >= 2 && rot === 0)) break;
-      }
-      if (!best.type) { out._notes.push(`Photo ${i + 1} could not be recognised (handwritten or blurry). Fill its details yourself.`); continue; }
-      found.push(names[best.type]);
-      if (best.type === 'sanction' || best.type === 'gcpp') {
-        const parse = best.type === 'sanction' ? parseSanction : parseGcpp;
-        parse(best.text, out, unsure);
-        // second reading, combined with the first: the original photo for the letter,
-        // a black-and-white version for the low-contrast calculator printout
-        say(`Reading photo ${i + 1} of ${photos.length} again for more detail…`);
-        const second = best.type === 'sanction' ? (best.rot ? prep(img, best.rot) : img) : prep(img, best.rot, true);
-        const { data } = await w.recognize(second);
-        parse(data.text, out, unsure);
-        const GCPP_KEYS = ['sumAssured', 'actualSumAssured', 'coverTerm', 'age', 'basicPremium', 'gst', 'totalPremium', 'mainLoanType'];
-        if (best.type === 'gcpp' && GCPP_KEYS.filter(k => out[k] != null).length < 4) {
-          // hard photo (small print in grey boxes): one more try with a stronger clean-up, reading it as a block of text
-          say(`Photo ${i + 1} is hard to read, trying a stronger clean-up…`);
-          await w.setParameters({ tessedit_pageseg_mode: '6' });
-          try { parse((await w.recognize(adaptive(img, best.rot))).data.text, out, unsure); }
-          finally { await w.setParameters({ tessedit_pageseg_mode: '3' }); }
+      // full-quality original when it was just picked (sharper text), otherwise the saved copy
+      const img = photos[i].file ? await createImageBitmap(photos[i].file).catch(() => loadImg(photos[i].dataUrl)) : await loadImg(photos[i].dataUrl);
+      say(`Reading photo ${i + 1} of ${photos.length}… about 30–60 seconds`);
+      let [res] = await ocr.predict(prep(img, 0));
+      let text = toText(res.items || []), c = classify(text), best = Object.assign(c, { text });
+      // sideways photo? (most text boxes taller than wide) → turn it, instead of blind retries
+      const tall = (res.items || []).filter(it => { const P = (it.poly.points || it.poly).map(p => Array.isArray(p) ? p : [p.x, p.y]);
+        const w = Math.max(...P.map(p => p[0])) - Math.min(...P.map(p => p[0])), h = Math.max(...P.map(p => p[1])) - Math.min(...P.map(p => p[1])); return h > w * 1.5; }).length;
+      const sideways = (res.items || []).length > 3 && tall / res.items.length > 0.35;
+      // not recognised upright, or looks sideways → turn it (upright photos that are recognised need no extra pass)
+      if (!c.type || (c.score < 3 && sideways)) {
+        for (const rot of [90, 270]) {
+          say(`Photo ${i + 1} is sideways, turning it…`);
+          [res] = await ocr.predict(prep(img, rot));
+          text = toText(res.items || []); c = classify(text);
+          if (c.score > best.score) best = Object.assign(c, { text });
+          if (c.score >= 3) break;
         }
       }
+      if (!best.type) { out._notes.push(`Photo ${i + 1} could not be recognised. Try a sharper, straight photo.`); continue; }
+      pages.push(best);
+    }
+    // printed bank documents first, handwriting last: printed values always win
+    const ORDER = ['sanction', 'gcpp', 'cover', 'enrollment'];
+    pages.sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type));
+    for (const p of pages) {
+      found.push(names[p.type]);
+      if (p.type === 'sanction') parseSanction(p.text, out, unsure);
+      if (p.type === 'gcpp') { parseGcpp(p.text, out, unsure); parseGcppDate(p.text, out); }
+      if (p.type === 'cover') parseCover(p.text, out, unsure, known);
+      if (p.type === 'enrollment') parseEnrollment(p.text, out, unsure);
     }
     reconcile(out, unsure);
 
-    const handwritten = found.filter(f => f === 'cover sheet' || f === 'enrollment form');
-    if (handwritten.length) out._notes.push(`The ${handwritten.join(' and ')} ${handwritten.length > 1 ? 'are' : 'is'} handwritten: please type the sales manager, DSA, PAN, mobile and nominee yourself.`);
+    if (found.some(f => f === 'cover sheet' || f === 'enrollment form'))
+      out._notes.push('Handwritten pages were read as far as possible; those values are marked orange. Please check them, and type the names, DSA and nominee.');
     const result = {};
     for (const [k, v] of Object.entries(out)) if (k[0] !== '_' && v != null && v !== '') result[k] = String(v);
     result.documentsFound = [...new Set(found)];
@@ -291,6 +308,10 @@ const OCR = (() => {
     result.valuesRead = Object.keys(result).filter(k => !['documentsFound', 'uncertainFields', 'notes'].includes(k)).length;
     return result;
   }
+  function parseGcppDate(t, out) {
+    const m = t.match(/DoD[^\n]*?\b(\d{1,2})\W{1,4}([A-Za-z]{3})\W{1,4}(\d{4})/i);
+    if (m && MONTHS[m[2].toUpperCase()] && out.gcppDate == null) out.gcppDate = iso(m[3], MONTHS[m[2].toUpperCase()], m[1]);
+  }
 
-  return { read, _test: { classify, parseSanction, parseGcpp, reconcile, prep } };
+  return { read, _test: { classify, parseSanction, parseGcpp, parseCover, parseEnrollment, reconcile, toText, prep, matchName } };
 })();

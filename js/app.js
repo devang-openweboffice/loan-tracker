@@ -281,7 +281,7 @@ function renderForm(id) {
   </div>
   <section class="card upload-card" id="upload">
     <div class="card-h"><span class="step">📷</span><div><h2>Fill from photos</h2>
-      <p>Add the photos of the file. The free reader on this phone reads the <b>printed</b> pages (sanction letter and GCPP calculator) and fills the form below. Handwritten details (sales manager, DSA, PAN, mobile) you type yourself. Photos never leave your phone for reading.${f ? ' Only empty fields are filled.' : ''}</p></div></div>
+      <p>Add the photos of the file. The free reader on this phone reads the printed sanction letter and GCPP calculator, and picks up what it can from handwritten pages (marked orange to check). The first time it downloads about 45 MB (use Wi-Fi); after that it works offline. Photos never leave your phone for reading.${f ? ' Only empty fields are filled.' : ''}</p></div></div>
     <label class="dropzone" id="dz">
       <input type="file" id="photo-input" accept="image/*" multiple hidden>
       <b class="only-desk">Drop photos here or click to choose</b><b class="only-phone">Tap to take photos or pick from gallery</b><span>All pages of one file at a time</span>
@@ -437,7 +437,7 @@ function renderForm(id) {
     const imgs = Array.from(list).filter(x => x.type.startsWith('image/'));
     if (!imgs.length) return;
     status.textContent = 'Preparing photos…';
-    for (const file of imgs) { try { photos.push(await Extract.prepare(file)); } catch (e) { toast('Could not open ' + file.name); } }
+    for (const file of imgs) { try { photos.push(Object.assign(await Extract.prepare(file), { file })); } catch (e) { toast('Could not open ' + file.name); } }
     status.innerHTML = `${photos.length} photo${photos.length > 1 ? 's' : ''} ready. Tap <b>Read documents</b>.`;
     drawThumbs();
   }
@@ -449,9 +449,10 @@ function renderForm(id) {
 
   readBtn.onclick = async () => {
     readBtn.disabled = true; readBtn.textContent = 'Reading…';
-    status.innerHTML = '<span class="spinner"></span> Reading the documents on this phone. This takes about a minute; keep the app open.';
+    status.innerHTML = '<span class="spinner"></span> Reading the documents on this phone. This takes 30–60 seconds per photo; keep the app open.';
     try {
-      const data = await OCR.read(photos, msg => { status.innerHTML = '<span class="spinner"></span> ' + esc(msg); });
+      const knownSalesManagers = [...new Set(['Ravi Patel', 'Sunil Prajapati', 'Hemant Prajapati', 'Chirag Patel'].concat(Store.files().map(x => x.salesManager).filter(Boolean)))];
+      const data = await OCR.read(photos, msg => { status.innerHTML = '<span class="spinner"></span> ' + esc(msg); }, { knownSalesManagers });
       const n = applyExtracted(data);
       const unsure = (data.uncertainFields || []).length;
       if (n < 5) {
@@ -492,7 +493,8 @@ function renderForm(id) {
     if (blank('gst') && get('basicPremium')) recalc('basicPremium');
     if (blank('totalPremium') && get('basicPremium')) set('totalPremium', num(get('basicPremium')) + num(get('gst')));
     if (blank('lifeInsPremium') && get('totalPremium')) set('lifeInsPremium', num(get('totalPremium')));
-    if (blank('insLoanAmount')) set('insLoanAmount', num(get('propertyInsPremium')) + num(get('lifeInsPremium')) + num(get('healthInsPremium')) || '');
+    // only when the property premium is known (without the sanction letter the loan amount is unknown, not "life only")
+    if (blank('insLoanAmount') && get('propertyInsPremium')) set('insLoanAmount', num(get('propertyInsPremium')) + num(get('lifeInsPremium')) + num(get('healthInsPremium')));
     if (blank('roi') && get('spread')) set('roi', num(get('repoRate')) + num(get('spread')));
     if (blank('installments') && get('mainLoanTenure')) set('installments', num(get('mainLoanTenure')) * 12);
     if (blank('emi') && get('insLoanAmount') && get('installments')) set('emi', Math.round(emi(get('insLoanAmount'), get('roi'), get('installments'))));
@@ -534,13 +536,14 @@ function renderForm(id) {
       });
       if (stage !== s.stages[0] && !out.history.some(h => h.stage === stage)) out.history.push({ stage, at: stageAt < loginAt ? loginAt : stageAt, note: '' });
     }
-    Extract.photos.set(out.id, photos).catch(() => toast('Saved, but the photos could not be stored in this browser'));
+    const stored = () => photos.map(({ file, ...p }) => p);   // resized copies only; the original stays in memory
+    Extract.photos.set(out.id, stored()).catch(() => toast('Saved, but the photos could not be stored in this browser'));
     if (GH.enabled() && photos.some(p => !p.remote)) {
       toast('Saved. Uploading photos to GitHub…');
       GH.uploadPhotos(out, photos).then(paths => {
         const cur = Store.get(out.id); if (!cur) return;
         cur.photoPaths = paths; Store.upsert(cur);
-        Extract.photos.set(out.id, photos);
+        Extract.photos.set(out.id, stored());
         toast('Photos uploaded to GitHub');
       }).catch(err => toast('Photo upload failed: ' + err.message));
     } else out.photoPaths = photos.map(p => p.remote).filter(Boolean);
