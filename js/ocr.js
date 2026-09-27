@@ -229,9 +229,14 @@ const OCR = (() => {
     for (const k of known) { const s = 1 - lev(r, squash(k)) / Math.max(r.length, squash(k).length); if (s > bestScore) { best = k; bestScore = s; } }
     return bestScore >= 0.72 ? best : null;
   }
+  function pick8(d) {
+    if (d.length === 8) return d;
+    if (d.length === 9) return d[1] === '3' ? d.slice(1) : d[0] === '3' ? d.slice(0, 8) : null;
+    return null;
+  }
   function parsePan(t) {
     // PAN = 5 letters, 4 digits, 1 letter; handwriting often has a gap ("BUKPT 1068G")
-    const m = t.replace(/[.:]/g, ' ').match(/\b([A-Z]{5})\s?([0-9]{4})\s?([A-Z])\b/); return m ? m[1] + m[2] + m[3] : null;
+    const m = t.replace(/[.:]/g, ' ').match(/(?<![A-Z])([A-Z]{5})\s?([0-9]{4})\s?([A-Z])(?![A-Z])/); return m ? m[1] + m[2] + m[3] : null;
   }
   /* Cover sheet by position: handwriting overflows the printed rows (a name's second line sits in the row below,
      the Old App ID is squeezed between rows), so line order is not enough. */
@@ -241,7 +246,7 @@ const OCR = (() => {
     const find = re => boxes.find(b => re.test(b.t));
     const title = s => s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()).trim();
     const nameOf = list => list.sort((a, b) => (Math.abs(a.y - b.y) < Math.min(a.h, b.h) * 0.5 ? a.x - b.x : a.y - b.y))
-      .map(b => b.t.replace(/CO-?\s*APPLICANT\s*NAME\s*:?/i, '').replace(/\(\s*[RO0]\s*\)|\b[RO0]\)|^1[oO0]\b|^[O0]\s*:/g, ' ')
+      .map(b => b.t.replace(/([A-Za-z])['`’]([a-z])/g, '$1j$2').replace(/CO-?\s*APPLICANT\s*NAME\s*:?/i, '').replace(/\(\s*[RO0]\s*\)|\b[RO0]\)|^1[oO0]\b|^[O0]\s*:/g, ' ')
         .replace(/[^A-Za-z .]/g, ' ').replace(/\b(CONTACT|NO|NAME|APPLICANT)\b/gi, ' '))
       .join(' ').replace(/\s+/g, ' ').split(' ').filter(w => w.replace(/\./g, '').length > 1).join(' ');
 
@@ -253,9 +258,9 @@ const OCR = (() => {
       if (d.length !== 8) {
         const beside = boxes.filter(b => b !== oldBox && Math.abs(b.y - oldBox.y) < Math.max(b.h, oldBox.h) * 0.7 && b.x > oldBox.x && /\d{2}/.test(b.t))
           .sort((a, b) => a.x - b.x);
-        for (const b of beside) { d += digitsIn(b.t); if (d.length >= 8) break; }
+        for (const b of beside) { d += digitsIn(b.t); if (d.length >= 8 && pick8(d)) break; }
       }
-      const m = d.match(/\d{8}/); if (d.length <= 9 && m) put('oldAppId', m[0]);
+      put('oldAppId', pick8(d));
     }
     // any other 8-digit 3xxxxxxx number on the cover is the App ID when it sits beside the printed "APP ID" label, else the old one
     const appLabel = boxes.find(b => /^\W*APP\s*[IT1l|]\s*[DO0]\b/i.test(b.t) && !OLD_RE.test(b.t.replace(/^\W*APP/i, '')));
@@ -287,7 +292,7 @@ const OCR = (() => {
     const put = (k, v) => { if (v != null && v !== '' && out[k] == null) { out[k] = v; unsure.add(k); } };
     put('pan', parsePan(t.toUpperCase()));
     // Old App ID: handwritten digits often come out split ("3166 7873"); join them, but only accept exactly 8 digits
-    const eight = s => { const m = (s || '').match(/\d[\d\s.]{6,12}\d/g) || []; return m.map(x => x.replace(/\D/g, '')).find(x => x.length === 8) || null; };
+    const eight = s => { const m = (s || '').match(/\d[\d\s.]{6,12}\d/g) || []; return m.map(x => pick8(x.replace(/\D/g, ''))).find(Boolean) || null; };
     const LL = lines(t), oi = LL.findIndex(l => /OLD\s*APP/i.test(l));
     let oldDigits = null;
     if (oi >= 0) oldDigits = eight(LL[oi].replace(/.*OLD\s*APP\.?\s*[IT1l|]?\s*[DT]?/i, '')) || eight(LL[oi + 1]) || eight(LL[oi - 1]);
@@ -296,7 +301,7 @@ const OCR = (() => {
     const ids = lines(t).filter(l => !/OLD/i.test(l)).join(' ').match(/(?:^|\D)(3\d{7})(?!\d)/g) || [];
     const clean = ids.map(x => x.replace(/\D/g, '')).filter(x => x !== (old && old[1]) && x !== out.oldAppId);
     if (clean.length) put('appId', clean[clean.length - 1]);
-    const mon = t.match(/\b(\d{2,3})\s*M[OA0]U?N?TH/i), yrs = t.match(/\b(\d{1,2})\s*YEAR/i);
+    const mon = t.match(/\b(\d{2,3})\s*M[OA0][NU]?[NTH]\w{0,2}\b/i), yrs = t.match(/\b(\d{1,2})\s*YEAR/i);
     if (mon && +mon[1] >= 12 && +mon[1] <= 480) { put('installments', +mon[1]); if (+mon[1] % 12 === 0) put('mainLoanTenure', +mon[1] / 12); }
     else if (yrs && +yrs[1] >= 1 && +yrs[1] <= 40) { put('mainLoanTenure', +yrs[1]); put('installments', +yrs[1] * 12); }
     // Applicant / co-applicant: "APPLICANT NAME: Thakor Ajaybhai  CO-APPLICANT NAME: Thakor Sejalben"
@@ -304,7 +309,7 @@ const OCR = (() => {
     const L = lines(t), ai = L.findIndex(l => /CO-?\s*APPLICANT\s*NAME/i.test(l));
     if (ai >= 0) {
       const row = L[ai], next = L[ai + 1] || '';
-      const words = s => (s || '').replace(/[^A-Za-z .]/g, ' ').replace(/\s+/g, ' ').trim();
+      const words = s => (s || '').replace(/([A-Za-z])['`’]([a-z])/g, '$1j$2').replace(/[^A-Za-z .]/g, ' ').replace(/\s+/g, ' ').trim();
       const labelFree = s => words(s).split(' ').filter(w => w.length > 1 && !/^(NAME|APPLICANT|CANT|LICANT|CONTACT|NO|R|O)$/i.test(w)).join(' ');
       const coPart = labelFree(row.split(/CO-?\s*APPLICANT\s*NAME\s*:?/i)[1]);
       const apPart = labelFree(row.split(/CO-?\s*APPLICANT/i)[0].replace(/.*NAME\s*:?/i, ''));
