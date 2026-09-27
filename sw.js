@@ -1,6 +1,6 @@
 /* Service worker: offline app shell, the cached photo reader (app/vendor, ~45 MB), and the "share photos to this app" target. */
 
-const VERSION = 'v20';
+const VERSION = 'v21';
 const SHELL_CACHE = 'shell-' + VERSION;
 const RUNTIME_CACHE = 'runtime-cdn';   // fixed name: the reader files survive app updates (not re-downloaded)
 const INBOX = 'share-inbox';
@@ -42,6 +42,7 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (req.method !== 'GET') return;
+  if (url.origin === location.origin && url.pathname.endsWith('/version.json')) return;   // always from the network (update check)
   if (url.hostname === 'api.anthropic.com') return;           // always live
 
   // App pages: serve the cached shell so the app opens offline.

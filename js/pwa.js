@@ -20,7 +20,7 @@ const PWA = (() => {
         w && w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); });
       });
       // Check for a new version whenever the app comes back to the foreground.
-      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { reg.update().catch(() => {}); checkVersionFile(); } });
     }).catch(() => {});
     let reloading = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading) { reloading = true; location.reload(); } });
@@ -40,13 +40,38 @@ const PWA = (() => {
       setTimeout(() => res(reg.waiting || null), 20000);
     });
     if (waiting) { waiting.postMessage('skipWaiting'); return 'updating'; }   // controllerchange reloads the page
+    try {
+      const v = await (await fetch('version.json?t=' + Date.now(), { cache: 'no-store' })).json();
+      if (v.version && newer(v.version, APP_CONFIG.version)) { hardUpdate(); return 'updating'; }
+    } catch (e) {}
     return 'latest';
   }
 
-  function showUpdate(apply) {
+  // Safety net that does not depend on iOS's service-worker update check:
+  // compare this app's version with version.json on the server (never cached) on every open / return to the app.
+  const newer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
+  let offered = false;
+  async function checkVersionFile() {
+    if (offered || typeof APP_CONFIG === 'undefined') return;   // top-level const: not a window property
+    try {
+      const v = await (await fetch('version.json?t=' + Date.now(), { cache: 'no-store' })).json();
+      if (v.version && newer(v.version, APP_CONFIG.version)) { offered = true; showUpdate(hardUpdate, v.version); }
+    } catch (e) { /* offline: try again next time */ }
+  }
+  // Force the new version: drop the old service worker and app files (the photo reader cache is kept), then reload.
+  async function hardUpdate() {
+    try {
+      for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister();
+      for (const k of await caches.keys()) if (k.startsWith('shell-')) await caches.delete(k);
+    } catch (e) {}
+    location.replace(location.pathname + '?v=' + Date.now() + location.hash);
+  }
+
+  function showUpdate(apply, ver) {
+    if (document.querySelector('.update-bar')) return;
     const bar = document.createElement('div');
     bar.className = 'update-bar';
-    bar.innerHTML = '<span>A new version of the app is ready.</span><button class="btn primary">Update</button>';
+    bar.innerHTML = `<span>A new version${ver ? ' (' + ver + ')' : ''} of the app is ready.</span><button class="btn primary">Update</button>`;
     bar.querySelector('button').onclick = apply;
     document.body.appendChild(bar);
   }
@@ -109,7 +134,8 @@ const PWA = (() => {
     catch (e) { return e.name === 'AbortError'; }
   }
 
-  return { checkForUpdate, register, install, canInstall, standalone, isIOS, iosSteps, installBanner, bindBanner, takeShared, share, canShare: () => !!navigator.share };
+  return { checkVersionFile, checkForUpdate, register, install, canInstall, standalone, isIOS, iosSteps, installBanner, bindBanner, takeShared, share, canShare: () => !!navigator.share };
 })();
 
 PWA.register();
+setTimeout(() => PWA.checkVersionFile && PWA.checkVersionFile(), 3000);
