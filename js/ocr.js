@@ -227,18 +227,38 @@ const OCR = (() => {
     return bestScore >= 0.72 ? best : null;
   }
   function parsePan(t) {
-    const m = t.replace(/[\s.:]/g, ' ').match(/\b([A-Z]{5}[0-9]{4}[A-Z])\b/); return m ? m[1] : null;
+    // PAN = 5 letters, 4 digits, 1 letter; handwriting often has a gap ("BUKPT 1068G")
+    const m = t.replace(/[.:]/g, ' ').match(/\b([A-Z]{5})\s?([0-9]{4})\s?([A-Z])\b/); return m ? m[1] + m[2] + m[3] : null;
   }
   function parseCover(t, out, unsure, known) {
     const put = (k, v) => { if (v != null && v !== '' && out[k] == null) { out[k] = v; unsure.add(k); } };
     put('pan', parsePan(t.toUpperCase()));
-    const old = t.match(/OLD\s*APP\.?\s*[IT1l|]?\s*[DT]?\s*[:.\-]*\s*(\d{8})/i); if (old) put('oldAppId', old[1]);
+    // Old App ID: handwritten digits often come out split ("3166 7873"); join them, but only accept exactly 8 digits
+    const oldM = t.match(/OLD\s*APP\.?\s*[IT1l|]?\s*[DT]?\s*[:.;\-]*\s*([\d][\d\s.]{6,12}\d)/i);
+    const oldDigits = oldM ? oldM[1].replace(/\D/g, '') : '';
+    const old = oldDigits.length === 8 ? [null, oldDigits] : null;
+    if (old) put('oldAppId', old[1]);
     const ids = lines(t).filter(l => !/OLD/i.test(l)).join(' ').match(/(?:^|\D)(3\d{7})(?!\d)/g) || [];
     const clean = ids.map(x => x.replace(/\D/g, '')).filter(x => !old || x !== old[1]);
     if (clean.length) put('appId', clean[clean.length - 1]);
     const mon = t.match(/\b(\d{2,3})\s*M[OA0]U?N?TH/i), yrs = t.match(/\b(\d{1,2})\s*YEAR/i);
     if (mon && +mon[1] >= 12 && +mon[1] <= 480) { put('installments', +mon[1]); if (+mon[1] % 12 === 0) put('mainLoanTenure', +mon[1] / 12); }
     else if (yrs && +yrs[1] >= 1 && +yrs[1] <= 40) { put('mainLoanTenure', +yrs[1]); put('installments', +yrs[1] * 12); }
+    // Applicant / co-applicant: "APPLICANT NAME: Thakor Ajaybhai  CO-APPLICANT NAME: Thakor Sejalben"
+    // with the handwriting continuing on the next row: "CONTACT NO (R) Mangaji (O): Ajaybhai"
+    const L = lines(t), ai = L.findIndex(l => /CO-?\s*APPLICANT\s*NAME/i.test(l));
+    if (ai >= 0) {
+      const row = L[ai], next = L[ai + 1] || '';
+      const words = s => (s || '').replace(/[^A-Za-z .]/g, ' ').replace(/\s+/g, ' ').trim();
+      const labelFree = s => words(s).split(' ').filter(w => w.length > 1 && !/^(NAME|APPLICANT|CANT|LICANT|CONTACT|NO|R|O)$/i.test(w)).join(' ');
+      const coPart = labelFree(row.split(/CO-?\s*APPLICANT\s*NAME\s*:?/i)[1]);
+      const apPart = labelFree(row.split(/CO-?\s*APPLICANT/i)[0].replace(/.*NAME\s*:?/i, ''));
+      const nm = next.match(/\(R\)\s*(.*?)\s*(?:\(O\)|\bO\)|$)\s*:?\s*(.*)$/i);
+      const apMore = nm ? labelFree(nm[1]) : '', coMore = nm ? labelFree(nm[2]) : '';
+      const title = s => s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()).trim();
+      if (coPart.length >= 3) put('coApplicantName', title([coPart, coMore].filter(Boolean).join(' ')));
+      if (apPart.length >= 3) put('applicantName', title([apPart, apMore].filter(Boolean).join(' ')));
+    }
     const rate = t.match(/RATE[^\n%]{0,12}?(\d{1,2}(?:\.\d{1,2})?)\s*%/i) || t.match(/\b(\d{1,2}(?:\.\d{1,2})?)\s*%/);
     if (rate && +rate[1] >= 5 && +rate[1] <= 20) put('roi', +rate[1]);
     for (const l of lines(t)) {
