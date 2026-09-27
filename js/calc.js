@@ -67,6 +67,62 @@ const Calc = (() => {
     </div>`;
   }
 
+  /* ---------- PDF: drawn directly (phones often block the browser print screen inside an installed app) ---------- */
+  let pdfLib = null;
+  function loadPdf() {
+    if (window.jspdf) return Promise.resolve(window.jspdf);
+    if (!pdfLib) pdfLib = new Promise((ok, fail) => {
+      const s = document.createElement('script'); s.src = 'vendor/jspdf.umd.min.js';
+      s.onload = () => ok(window.jspdf); s.onerror = () => { pdfLib = null; fail(new Error('Could not load the PDF maker. Check the internet once and try again.')); };
+      document.head.appendChild(s);
+    });
+    return pdfLib;
+  }
+  function makePdf(d, c) {
+    const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' });
+    const X = 12, W = 186, T = 14;
+    doc.setLineWidth(0.35); doc.setDrawColor(40);
+    doc.setFillColor(58, 58, 58); doc.rect(X, T, W, 9, 'F');
+    doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text('Group Credit Protection Plus - ', X + 3, T + 6);
+    doc.setFont('times', 'italic'); doc.text('Three-in-one Coverage, One Simple Choice', X + 3 + doc.getTextWidth('Group Credit Protection Plus - ') + 1, T + 6);
+    doc.setFillColor(107, 107, 107); doc.rect(X, T + 9, W, 11, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text('GCPP - Calculator', X + 3, T + 17);
+    doc.setFontSize(8.5); doc.text('UIN:' + d.uin + '      Date:-' + dmy(d.date), X + W - 3, T + 17, { align: 'right' });
+    doc.setTextColor(17);
+    const [bd, bm, by] = parts(d.dob), [dd, dm, dy] = parts(d.dod);
+    const L = [['Customer Name', d.name, 0, 1], ['Sum Assured (Rs.)', n0(num(d.sumAssured) || '')], ['Premium Financed', d.financed], ['Term (Years)', d.term],
+      ['DoB (DD/MM/YYYY)', [bd, bm, by]], ['DoD (DD/MM/YYYY)', [dd, dm, dy]], ['Cover', d.cover], ['MPH No', d.mph, 1]];
+    const R = [['Product', d.product], ['Rider', d.rider], ['Final Product', c.finalProduct], ['Actual Sum Assured', n0(c.actual || ''), 1],
+      ['Calculated Age (Years)', String(c.age)], ['Basic Premium', n0(num(d.basic) || '')], ['GST', n0(c.gst || '')], ['Premium to be filled in App form', n0(c.total || ''), 1]];
+    const col = (rows, cx) => rows.forEach(([label, v, bold, left], i) => {
+      const y = T + 26 + i * 10.5, bx = cx + 42, bw = 49, bh = 7.5;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(label.length > 24 ? 8 : 9.5);
+      doc.text(doc.splitTextToSize(label + ' :', 40), cx + 40, label.length > 24 ? y + 2.6 : y + 5, { align: 'right' });
+      const cell = (t, x, w, b, al) => {
+        doc.rect(x, y, w, bh); doc.setFont('helvetica', b ? 'bold' : 'normal');
+        let fs = 10; doc.setFontSize(fs); while (fs > 6 && doc.getTextWidth(String(t || '')) > w - 2) doc.setFontSize(fs -= 0.5);
+        doc.text(String(t || ''), al ? x + 1.5 : x + w / 2, y + 5.1, { align: al ? 'left' : 'center' });
+      };
+      if (Array.isArray(v)) v.forEach((p, j) => cell(p, bx + j * bw / 3, bw / 3)); else cell(v, bx, bw, bold, left);
+    });
+    col(L, X + 2); col(R, X + 95);
+    doc.rect(X, T, W, 26 + 8 * 10.5 + 3);
+    return doc;
+  }
+  async function sharePdf(d, c, mode) {
+    await loadPdf();
+    const name = 'GCPP-' + ((d.name || 'Calculator').trim().replace(/[^A-Za-z0-9]+/g, '-')) + '.pdf';
+    const blob = makePdf(d, c).output('blob');
+    const file = new File([blob], name, { type: 'application/pdf' });
+    if (mode !== 'download' && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
   function render(fileId) {
     let d = load();
     const f = fileId ? Store.get(fileId) : null;
@@ -83,10 +139,11 @@ const Calc = (() => {
     view().innerHTML = `
     <div class="page-head no-print">
       <div><a href="${f ? '#file/' + f.id : '#files'}" class="back">‹ Back</a><h1>GCPP calculator</h1>
-      <p class="sub">Fill it in like the Excel sheet. GST, premium, actual sum assured, age and final product are calculated. Then tap <b>Print / Save PDF</b>.</p></div>
+      <p class="sub">Fill it in like the Excel sheet. GST, premium, actual sum assured, age and final product are calculated. Then tap <b>Share / Print PDF</b> (choose Print, Save to Files or WhatsApp).</p></div>
       <div class="head-actions">
         <button class="btn" id="c-clear" type="button">Clear</button>
-        <button class="btn primary" id="c-print" type="button">Print / Save PDF</button>
+        <button class="btn" id="c-dl" type="button">Download PDF</button>
+        <button class="btn primary" id="c-print" type="button">Share / Print PDF</button>
       </div>
     </div>
     <form class="card no-print" id="calc-form" autocomplete="off">
@@ -123,13 +180,9 @@ const Calc = (() => {
     form.oninput = paint; form.onchange = paint;
     paint();
 
-    $('#c-print').onclick = () => {
-      paint();
-      document.title = 'GCPP-' + (d.name || 'Calculator').trim().replace(/\s+/g, '-');
-      document.body.classList.add('print-calc');
-      window.print();
-      setTimeout(() => { document.body.classList.remove('print-calc'); document.title = 'Avani · Loan Insurance Tracker'; }, 500);
-    };
+    loadPdf().catch(() => {});   // ready before the tap: the share menu needs to open straight from the tap
+    const pdfBtn = (id, mode) => { $(id).onclick = () => { paint(); sharePdf(d, compute(d), mode).catch(e => toast(e.message)); }; };
+    pdfBtn('#c-print', 'share'); pdfBtn('#c-dl', 'download');
     $('#c-clear').onclick = () => { if (!confirm('Clear the calculator?')) return; save(blank()); location.hash = '#calc'; render(); };
     $('#c-new').onclick = () => {
       paint();
@@ -150,5 +203,5 @@ const Calc = (() => {
     };
   }
 
-  return { render, compute };
+  return { render, compute, _test: { makePdf, loadPdf } };
 })();
