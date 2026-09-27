@@ -125,7 +125,7 @@ const Managers = (() => {
       <div class="kpi"><span>Active this month</span><b>${res.active}</b><small>of ${res.rows.filter(r => r.key !== '(not set)').length} sales managers</small></div>
       <div class="kpi"><span>Top partner</span><b class="kpi-name">${top && top.premium ? esc(top.name) : '–'}</b><small>${top && top.premium ? inr(top.premium, true) + ' · ' + pct(top.share) + ' of business' : 'no business yet'}</small></div>
       <div class="kpi ${inactive.length ? 'alert' : ''}"><span>Inactive (${INACTIVE_DAYS}+ days)</span><b>${inactive.length}</b><small>${inactive.slice(0, 2).map(r => esc(r.name)).join(', ') || 'none'}</small></div>
-      <div class="kpi"><span>Life premium · ${monthLabel(m).split(' ')[0]}</span><b>${inr(res.total, true)}</b><small>from ${res.rows.filter(r => r.premium > 0).length} sales managers</small></div>
+      <div class="kpi"><span>Premium ex GST · ${monthLabel(m).split(' ')[0]}</span><b>${inr(res.total, true)}</b><small>from ${res.rows.filter(r => r.premium > 0).length} sales managers</small></div>
     </div>
 
     ${focus.length ? `<section class="card"><div class="card-h"><div><h2>Focus this month</h2><p>Sales managers to push, ranked by how much business is at stake.</p></div></div>
@@ -140,13 +140,13 @@ const Managers = (() => {
         { W: chartW(), labelW: chartW() < 480 ? 120 : 170, valueW: 110, emptyText: 'No business booked this month yet' })}</div></section>
 
     ${res.rows.length ? `<div class="table-wrap"><table class="list sm-table">
-      <thead><tr><th>Sales manager</th><th class="r">Files logged</th><th class="r">Reached ${esc(shortStage(res.s.businessStage))}</th><th class="r">Life premium</th><th class="r">Share</th><th class="r">vs last month</th>
+      <thead><tr><th>Sales manager</th><th class="r">Files logged</th><th class="r">Reached ${esc(shortStage(res.s.businessStage))}</th><th class="r">Premium ex GST</th><th class="r">Share</th><th class="r">vs last month</th>
         <th class="r">Conversion</th><th class="r">Avg TAT</th><th class="r">Query rate</th><th class="r">Last file</th><th>Status</th></tr></thead>
       <tbody>${res.rows.map(r => `<tr data-sm="${esc(r.key)}">
         <td><a class="name" href="#manager/${encodeURIComponent(r.key)}">${esc(r.name)}</a><div class="muted">${r.open} open file${r.open === 1 ? '' : 's'}${r.openQ ? ` · ${r.openQ} open quer${r.openQ === 1 ? 'y' : 'ies'}` : ''}</div></td>
         <td class="r num" data-label="Logged">${r.logged}</td>
         <td class="r num" data-label="Reached ${esc(shortStage(res.s.businessStage))}">${r.booked}</td>
-        <td class="r num" data-label="Life premium"><b>${r.premium ? inr(r.premium) : '–'}</b><div class="muted">${r.loan ? inr(r.loan, true) + ' loan' : ''}</div></td>
+        <td class="r num" data-label="Premium ex GST"><b>${r.premium ? inr(r.premium) : '–'}</b><div class="muted">${r.loan ? inr(r.loan, true) + ' loan' : ''}</div></td>
         <td class="r num" data-label="Share">${r.premium ? pct(r.share) : '–'}</td>
         <td class="r num" data-label="vs last month">${delta(r.premium, r.prev.premium)}</td>
         <td class="r num" data-label="Conversion">${pct(r.conv)}</td>
@@ -175,9 +175,9 @@ const Managers = (() => {
     view().innerHTML = `
     <div class="page-head"><div><a href="#managers" class="back">‹ Sales managers</a>
       <h1>${esc(r.name)} ${r.tags.map(tagHtml).join('')}</h1>
-      <p class="sub">${monthLabel(UI.month)} · last file ${ago(r.daysSince)} · ${r.items.length} file${r.items.length === 1 ? '' : 's'} in total, ${inr(allPremium, true)} premium overall</p></div></div>
+      <p class="sub">${monthLabel(UI.month)} · last file ${ago(r.daysSince)} · ${r.items.length} file${r.items.length === 1 ? '' : 's'} in total, ${inr(allPremium, true)} premium overall (ex GST)</p></div></div>
     <div class="kpis">
-      <div class="kpi"><span>Life premium</span><b>${inr(r.premium, true)}</b><small>${delta(r.premium, r.prev.premium)} vs last month</small></div>
+      <div class="kpi"><span>Premium ex GST</span><b>${inr(r.premium, true)}</b><small>${delta(r.premium, r.prev.premium)} vs last month</small></div>
       <div class="kpi"><span>Files logged</span><b>${r.logged}</b><small>${r.booked} reached ${esc(res.s.businessStage)}</small></div>
       <div class="kpi"><span>Share of your business</span><b>${pct(r.share)}</b><small>this month</small></div>
       <div class="kpi"><span>Conversion</span><b>${pct(r.conv)}</b><small>last 3 months</small></div>
@@ -185,7 +185,7 @@ const Managers = (() => {
       <div class="kpi ${r.openQ ? 'alert' : ''}"><span>Query rate</span><b>${pct(r.qRate)}</b><small>${r.openQ} open now</small></div>
     </div>
     ${r.tags.length ? `<section class="card"><div class="card-h"><div><h2>What to do</h2></div></div><ul class="todo">${r.tags.map(t => `<li>${tagHtml(t)} <span class="muted">${esc(t.why)}.</span> ${esc(t.action)}.</li>`).join('')}</ul></section>` : ''}
-    <section class="card"><div class="card-h"><div><h2>Life premium, last 6 months</h2></div></div>
+    <section class="card"><div class="card-h"><div><h2>Premium without GST, last 6 months</h2></div></div>
       <div class="pad">${Charts.columns(r.trend.map(t => ({ label: monthLabel(t.m).split(' ')[0].slice(0, 3), value: t.premium, display: t.premium ? inr(t.premium, true) : '0',
         tip: `${monthLabel(t.m)}: ${inr(t.premium)} from ${t.booked} file${t.booked === 1 ? '' : 's'} · ${t.logged} logged`, color: t.m === UI.month ? Charts.C.series : Charts.C.seriesSoft })), { W: chartW() })}</div></section>
     <section class="card"><div class="card-h"><div><h2>Files (${files.length})</h2></div></div>
@@ -205,7 +205,7 @@ const Managers = (() => {
     return `<section class="r-sec">
       <h2>Sales manager performance</h2>
       <div class="table-wrap"><table class="mini sm-report">
-        <thead><tr><th>Sales manager</th><th class="r">Logged</th><th class="r">Reached ${esc(shortStage(res.s.businessStage))}</th><th class="r">Life premium</th><th class="r">Share</th><th class="r">vs last month</th><th class="r">Conversion</th><th class="r">Last file</th><th>Status</th></tr></thead>
+        <thead><tr><th>Sales manager</th><th class="r">Logged</th><th class="r">Reached ${esc(shortStage(res.s.businessStage))}</th><th class="r">Premium ex GST</th><th class="r">Share</th><th class="r">vs last month</th><th class="r">Conversion</th><th class="r">Last file</th><th>Status</th></tr></thead>
         <tbody>${rows.map(r => `<tr><td><b>${esc(r.name)}</b></td><td class="r num">${r.logged}</td><td class="r num">${r.booked}</td><td class="r num">${r.premium ? inr(r.premium) : '–'}</td>
           <td class="r num">${r.premium ? pct(r.share) : '–'}</td><td class="r num">${delta(r.premium, r.prev.premium)}</td><td class="r num">${pct(r.conv)}</td><td class="r num">${ago(r.daysSince)}</td>
           <td>${r.tags.map(tagHtml).join(' ') || '<span class="muted">steady</span>'}</td></tr>`).join('')}</tbody></table></div>

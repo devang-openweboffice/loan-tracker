@@ -21,7 +21,7 @@ const Report = (() => {
     const sum = (arr, fn) => arr.reduce((a, x) => a + fn(x), 0);
     const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
 
-    const premium = sum(booked, x => x.fx.premium);
+    const premium = sum(booked, x => x.fx.premium), premiumGst = sum(booked, x => x.fx.premiumGst);
     const loan = sum(booked, x => x.fx.loan);
 
     // pace = share of the month elapsed (current month only)
@@ -84,7 +84,7 @@ const Report = (() => {
     const rejected = worked.filter(x => x.fx.outcome && x.fx.segments.length && inM(x.fx.segments[x.fx.segments.length - 1].start));
 
     return {
-      m, s, target, all, logged, booked, worked, premium, loan, pace, isCurrent, isFuture, dim, dayNow, workDaysLeft, cum,
+      m, s, target, all, logged, booked, worked, premium, premiumGst, loan, pace, isCurrent, isFuture, dim, dayNow, workDaysLeft, cum,
       avgTat, bizTats, withinTat, stageAvg, bottleneck, pipeline, queries, resolved, avgRes, qByCat, qBy, qByStage,
       loggedWithQ, bookedClean, bySM, byType, propAttach, riderAttach, avgTicket, stuck, pipelinePremium, rejected,
       openQ: queries.filter(({ q }) => !q.resolvedAt)
@@ -248,8 +248,9 @@ const Report = (() => {
       <section class="r-sec">
         <div class="hero-row">
           <div class="hero">
-            <span>Life premium booked</span>
+            <span>Life premium booked · without GST</span>
             <b>${inr(st.premium)}</b>
+            <small class="muted">${inr(st.premiumGst)} with GST</small>
             <small>${Math.round(target.premium ? st.premium / target.premium * 100 : 0)}% of ${inr(target.premium)} target ${deltaTxt(st.premium, prev.premium, compact)}</small>
           </div>
           <div class="stat"><span>Files logged</span><b>${st.logged.length}</b><small>${deltaTxt(st.logged.length, prev.logged.length)}</small></div>
@@ -262,12 +263,12 @@ const Report = (() => {
       <section class="r-sec">
         <h2>Target achievement</h2>
         <div class="meters">
-          ${Charts.meter('Life premium', st.premium, target.premium, compact, { pace: st.pace, foot: st.isCurrent && target.premium > st.premium ? `Need ${inr(target.premium - st.premium, true)} more · ${st.workDaysLeft} working days left` : '' })}
+          ${Charts.meter('Life premium (without GST)', st.premium, target.premium, compact, { pace: st.pace, foot: st.isCurrent && target.premium > st.premium ? `Need ${inr(target.premium - st.premium, true)} more · ${st.workDaysLeft} working days left` : '' })}
           ${Charts.meter('Insurance loan amount', st.loan, target.loan, compact, { pace: st.pace })}
           ${Charts.meter('Files logged', st.logged.length, target.files, v => String(Math.round(v)), { pace: st.pace })}
         </div>
         <div class="fig">
-          <h3>Premium booked through the month vs target pace</h3>
+          <h3>Premium booked (without GST) through the month vs target pace</h3>
           ${st.isFuture ? Charts.cumulative([], target.premium, st.dim, compact, { W: FW }) : Charts.cumulative(st.cum, target.premium, st.dim, compact, { W: FW })}
         </div>
       </section>
@@ -346,7 +347,7 @@ const Report = (() => {
           <div class="fcard">
             <div class="fcard-h"><div><b>${esc(f.applicantName)}</b><div class="muted">${esc(f.appId || '–')} · ${esc(f.mainLoanType || '')} · SM ${esc(f.salesManager || '–')}</div></div>${stageBadge(fx)}</div>
             <div class="fcard-n">
-              <div><span>Life premium</span><b>${inr(fx.premium)}</b></div>
+              <div><span>Premium ex GST</span><b>${inr(fx.premium)}</b></div>
               <div><span>Ins. loan</span><b>${inr(fx.loan)}</b></div>
               <div><span>Logged</span><b>${fmtDate(fx.loginAt)}</b></div>
               <div><span>${fx.bizAt ? 'TAT to ' + esc(shortStage(s.businessStage)) : 'Running'}</span><b class="${days(fx.bizMs ?? fx.totalMs) > s.tatBenchmarkDays ? 'late' : ''}">${dur(fx.bizMs ?? fx.totalMs)}</b></div>
@@ -398,7 +399,8 @@ const Report = (() => {
       `*${s.rmName} – ${monthLabel(st.m)} report*`,
       `${s.company} · ${s.branch}`,
       '',
-      `Premium booked: ${inr(st.premium)} / ${inr(target.premium)} (${Math.round(target.premium ? st.premium / target.premium * 100 : 0)}%)`,
+      `Premium booked (without GST): ${inr(st.premium)} / ${inr(target.premium)} (${Math.round(target.premium ? st.premium / target.premium * 100 : 0)}%)`,
+      `Premium with GST: ${inr(st.premiumGst)}`,
       `Insurance loan: ${inr(st.loan)} / ${inr(target.loan)}`,
       `Files logged: ${st.logged.length} / ${target.files} · reached ${s.businessStage}: ${st.booked.length}`,
       `Avg TAT: ${st.avgTat != null ? dur(st.avgTat) : '–'} (target ${s.tatBenchmarkDays}d)`,

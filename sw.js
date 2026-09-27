@@ -1,12 +1,12 @@
 /* Service worker: offline app shell, the cached photo reader (app/vendor, ~45 MB), and the "share photos to this app" target. */
 
-const VERSION = 'v24';
+const VERSION = 'v25';
 const SHELL_CACHE = 'shell-' + VERSION;
 const RUNTIME_CACHE = 'runtime-cdn';   // fixed name: the reader files survive app updates (not re-downloaded)
 const INBOX = 'share-inbox';
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
-  './js/config.js', './js/data.js', './js/charts.js', './js/extract.js', './js/ocr.js', './js/github.js', './js/lock.js', './js/app.js', './js/managers.js', './js/report.js', './js/pwa.js',
+  './js/config.js', './js/data.js', './js/charts.js', './js/extract.js', './js/ocr.js', './js/github.js', './js/lock.js', './js/app.js', './js/managers.js', './js/calc.js', './js/report.js', './js/pwa.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'
 ];
 

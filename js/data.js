@@ -193,7 +193,9 @@ function fileFacts(f, settings) {
     segments,
     bizAt: bizEntry ? new Date(bizEntry.at) : null,
     bizMs: bizEntry && loginAt ? new Date(bizEntry.at) - loginAt : null,
-    premium: num(f.lifeInsPremium) || num(f.totalPremium),
+    // business and targets count the premium WITHOUT GST (basic premium); premiumGst is what the customer pays
+    premiumGst: num(f.lifeInsPremium) || num(f.totalPremium),
+    premium: num(f.basicPremium) || Math.round((num(f.lifeInsPremium) || num(f.totalPremium)) / 1.18),
     loan: num(f.insLoanAmount),
     queries, openQ,
     queryMs: queries.filter(q => q.resolvedAt).map(q => new Date(q.resolvedAt) - new Date(q.raisedAt))

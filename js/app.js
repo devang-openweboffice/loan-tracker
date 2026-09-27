@@ -93,6 +93,7 @@ function route() {
     case 'report': return Report.render(arg || UI.month);
     case 'settings': return renderSettings();
     case 'queries': return renderQueries();
+    case 'calc': return Calc.render(arg);
     case 'managers': return Managers.render();
     case 'manager': return Managers.renderOne(arg);
     default: return renderList();
@@ -168,6 +169,7 @@ function renderList() {
         <select id="m-sel">${monthOptions(m)}</select>
         <button class="icon-btn" id="m-next" aria-label="Next month">›</button>
       </div>
+      <a class="btn" href="#calc">GCPP calculator</a>
       <a class="btn" href="#new">+ New file</a>
       <a class="btn primary" href="#report/${m}">Generate report</a>
     </div>
@@ -176,7 +178,7 @@ function renderList() {
   ${PWA.installBanner()}
   <div class="kpis">
     <div class="kpi"><span>Files logged</span><b>${logged.length}</b><small>target ${target.files}</small></div>
-    <div class="kpi wide"><span>Business done · life premium</span><b>${inr(premium, true)}</b>
+    <div class="kpi wide"><span>Business done · premium without GST</span><b>${inr(premium, true)}</b>
       <div class="mini-track"><div style="width:${Math.min(100, pct)}%"></div></div><small>${pct}% of ${inr(target.premium, true)} · ${booked.length} file${booked.length === 1 ? '' : 's'} reached ${esc(s.businessStage)}</small></div>
     <div class="kpi"><span>In process</span><b>${inProcess.length}</b><small>${esc(scopeLabel())}</small></div>
     <div class="kpi"><span>Disbursed</span><b>${scoped.filter(x => x.fx.completed).length}</b><small>${scoped.filter(x => x.fx.outcome).length} rejected / cancelled</small></div>
@@ -210,7 +212,7 @@ function renderList() {
   <table class="list">
     <thead><tr>
       <th>Applicant / App ID</th><th>Source</th><th>Loan type</th>
-      <th class="r">Life premium</th><th class="r">Ins. loan</th>
+      <th class="r">Premium ex GST</th><th class="r">Ins. loan</th>
       <th>Current stage</th><th class="r">In stage</th><th class="r">Total TAT</th><th>Queries</th>
     </tr></thead>
     <tbody>
@@ -219,7 +221,7 @@ function renderList() {
         <td><a href="#file/${f.id}" class="name">${esc(f.applicantName || '(no name)')}</a><div class="muted">${esc(f.appId || '–')} · logged ${fmtDate(fx.loginAt)}</div></td>
         <td data-label="Sales manager">${f.salesManager ? `<a href="#manager/${encodeURIComponent(Managers.keyOf(f.salesManager))}">${esc(f.salesManager)}</a>` : '–'}<div class="muted">${esc(f.dsaName ? 'DSA ' + f.dsaName : '')}</div></td>
         <td data-label="Loan type">${esc(f.mainLoanType || '–')}</td>
-        <td class="r num" data-label="Life premium">${fx.premium ? inr(fx.premium) : '–'}</td>
+        <td class="r num" data-label="Premium ex GST">${fx.premium ? inr(fx.premium) : '–'}</td>
         <td class="r num" data-label="Ins. loan">${fx.loan ? inr(fx.loan) : '–'}</td>
         <td>${stageBadge(fx)}<div class="progress" title="${Math.round(fx.progress * 100)}% through the process"><div style="width:${fx.progress * 100}%"></div></div></td>
         <td data-label="In stage" class="r num ${!fx.closed && days(fx.inStageMs) > s.stageBenchmarkDays ? 'late' : ''}">${fx.closed ? '–' : dur(fx.inStageMs)}</td>
@@ -260,7 +262,8 @@ function renderForm(id) {
   const s = Store.settings();
   const f = id ? Store.get(id) : null;
   if (id && !f) return notFound();
-  const data = f || {};
+  const data = f || UI.prefill || {};   // prefill: values handed over by the GCPP calculator
+  UI.prefill = null;
   const files = Store.files();
   const uniq = k => Array.from(new Set(files.map(x => x[k]).filter(Boolean)));
 
@@ -580,6 +583,7 @@ function renderDetail(id) {
       <h1>${esc(f.applicantName)} ${stageBadge(fx)}</h1>
       <p class="sub">App ID ${esc(f.appId || '–')} · Old App ID ${esc(f.oldAppId || '–')} · ${esc(f.mainLoanType || '')} · SM ${esc(f.salesManager || '–')}</p></div>
     <div class="head-actions">
+      <a class="btn" href="#calc/${f.id}">GCPP sheet</a>
       <a class="btn" href="#edit/${f.id}">Edit details</a>
       <button class="btn danger-ghost" id="del">Delete</button>
     </div>
@@ -587,7 +591,7 @@ function renderDetail(id) {
 
   ${!f.appId || !f.salesManager ? `<div class="missing-note">Missing: <b>${[!f.appId && 'App ID', !f.salesManager && 'Sales manager'].filter(Boolean).join(' and ')}</b>. <a href="#edit/${f.id}">Add now ›</a></div>` : ''}
   <div class="kpis">
-    <div class="kpi"><span>Life premium</span><b>${inr(fx.premium)}</b><small>basic ${inr(f.basicPremium)} + GST ${inr(f.gst)}</small></div>
+    <div class="kpi"><span>Premium without GST</span><b>${inr(fx.premium)}</b><small>${inr(fx.premiumGst)} with GST (GST ${inr(f.gst)})</small></div>
     <div class="kpi"><span>Insurance loan</span><b>${inr(fx.loan)}</b><small>EMI ${inr(f.emi)} × ${esc(f.installments || '–')}</small></div>
     <div class="kpi"><span>Total TAT</span><b>${dur(fx.totalMs)}</b><small>${fx.closed ? 'closed' : 'still running'} · since ${fmtDate(fx.loginAt, true)}</small></div>
     <div class="kpi ${!fx.closed && days(fx.inStageMs) > s.stageBenchmarkDays ? 'alert' : ''}"><span>In current stage</span><b>${fx.closed ? '–' : dur(fx.inStageMs)}</b><small>${esc(fx.current)}</small></div>
@@ -806,12 +810,12 @@ function renderSettings() {
       <div class="grid">
         <label class="fld"><span>Month</span><input type="month" name="tMonth" value="${m}"></label>
         <label class="fld"><span>Files (count)</span><input type="number" name="tFiles" value="${t.files}"></label>
-        <label class="fld"><span>Life premium (₹)</span><input type="number" name="tPremium" value="${t.premium}"></label>
+        <label class="fld"><span>Life premium, without GST (₹)</span><input type="number" name="tPremium" value="${t.premium}"></label>
         <label class="fld"><span>Insurance loan amount (₹)</span><input type="number" name="tLoan" value="${t.loan}"></label>
       </div>
       <div class="grid">
         <label class="fld"><span>Default files / month</span><input type="number" name="dFiles" value="${s.defaultTargets.files}"></label>
-        <label class="fld"><span>Default life premium (₹)</span><input type="number" name="dPremium" value="${s.defaultTargets.premium}"></label>
+        <label class="fld"><span>Default life premium, without GST (₹)</span><input type="number" name="dPremium" value="${s.defaultTargets.premium}"></label>
         <label class="fld"><span>Default insurance loan (₹)</span><input type="number" name="dLoan" value="${s.defaultTargets.loan}"></label>
       </div></section>
 

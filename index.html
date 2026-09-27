@@ -511,6 +511,25 @@ body.locked .topbar, body.locked .tabbar, body.locked #view { visibility: hidden
   .update-bar { bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px); }
 }
 
+/* ---------- GCPP calculator sheet (looks like the Bajaj Excel sheet) ---------- */
+.sheet-wrap { overflow-x: auto; margin-top: 16px; }
+.gcpp-sheet { min-width: 640px; background: #fff; color: #111; border: 2px solid #333; font-family: Arial, Helvetica, sans-serif; }
+.gs-top { background: #3a3a3a; color: #fff; font-weight: 700; font-size: 15px; padding: 8px 12px; }
+.gs-top em { font-family: Georgia, serif; font-weight: 400; }
+.gs-title { display: flex; align-items: baseline; gap: 16px; background: #6b6b6b; color: #fff; padding: 6px 12px; }
+.gs-title h2 { margin: 0; font-size: 22px; flex: 1; }
+.gs-title span { font-size: 12px; font-weight: 700; }
+.gs-body { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 28px; padding: 14px 16px 18px; }
+.gs-col { display: flex; flex-direction: column; gap: 7px; }
+.gs-row { display: grid; grid-template-columns: 46% 54%; align-items: center; }
+.gs-row > span { text-align: right; padding-right: 8px; font-size: 13px; }
+.gs-row > b, .gs-date i { border: 1.5px solid #333; min-height: 26px; padding: 4px 6px; text-align: center; font-weight: 400; font-size: 13.5px; font-style: normal; }
+.gs-row > b strong { font-weight: 700; }
+.gs-row > b.wide { text-align: left; }
+.gs-date { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+.gs-date i + i { border-left: 0; }
+body.print-calc .gcpp-sheet { min-width: 0; }
+
 /* ---------- print: only the report, A4 ---------- */
 @page { size: A4; margin: 10mm; }
 @media print {
@@ -526,6 +545,7 @@ body.locked .topbar, body.locked .tabbar, body.locked #view { visibility: hidden
   .ins textarea { border: 0; resize: none; background: transparent; padding: 0; }
   .ins textarea:placeholder-shown { display: none; }
   .table-wrap { box-shadow: none; overflow: visible; }
+  body.print-calc .sheet-wrap { overflow: visible; margin: 0; }
 }
 </style>
 </head>
@@ -538,6 +558,7 @@ body.locked .topbar, body.locked .tabbar, body.locked #view { visibility: hidden
         <a href="#files" data-nav="files">Files</a>
         <a href="#new" data-nav="new">New file</a>
         <a href="#report" data-nav="report">Report</a>
+        <a href="#calc" data-nav="calc">GCPP calc</a>
         <a href="#managers" data-nav="managers">Managers</a>
         <a href="#queries" data-nav="queries">Queries</a>
         <a href="#settings" data-nav="settings">Settings</a>
@@ -564,6 +585,7 @@ body.locked .topbar, body.locked .tabbar, body.locked #view { visibility: hidden
   <script src="js/lock.js"></script>
   <script src="js/app.js"></script>
   <script src="js/managers.js"></script>
+  <script src="js/calc.js"></script>
   <script src="js/report.js"></script>
   <script src="js/pwa.js"></script>
 </body>
