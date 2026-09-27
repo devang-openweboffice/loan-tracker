@@ -234,9 +234,11 @@ const OCR = (() => {
     const put = (k, v) => { if (v != null && v !== '' && out[k] == null) { out[k] = v; unsure.add(k); } };
     put('pan', parsePan(t.toUpperCase()));
     // Old App ID: handwritten digits often come out split ("3166 7873"); join them, but only accept exactly 8 digits
-    const oldM = t.match(/OLD\s*APP\.?\s*[IT1l|]?\s*[DT]?\s*[:.;\-]*\s*([\d][\d\s.]{6,12}\d)/i);
-    const oldDigits = oldM ? oldM[1].replace(/\D/g, '') : '';
-    const old = oldDigits.length === 8 ? [null, oldDigits] : null;
+    const eight = s => { const m = (s || '').match(/\d[\d\s.]{6,12}\d/g) || []; return m.map(x => x.replace(/\D/g, '')).find(x => x.length === 8) || null; };
+    const LL = lines(t), oi = LL.findIndex(l => /OLD\s*APP/i.test(l));
+    let oldDigits = null;
+    if (oi >= 0) oldDigits = eight(LL[oi].replace(/.*OLD\s*APP\.?\s*[IT1l|]?\s*[DT]?/i, '')) || eight(LL[oi + 1]) || eight(LL[oi - 1]);
+    const old = oldDigits ? [null, oldDigits] : null;
     if (old) put('oldAppId', old[1]);
     const ids = lines(t).filter(l => !/OLD/i.test(l)).join(' ').match(/(?:^|\D)(3\d{7})(?!\d)/g) || [];
     const clean = ids.map(x => x.replace(/\D/g, '')).filter(x => !old || x !== old[1]);
@@ -253,7 +255,7 @@ const OCR = (() => {
       const labelFree = s => words(s).split(' ').filter(w => w.length > 1 && !/^(NAME|APPLICANT|CANT|LICANT|CONTACT|NO|R|O)$/i.test(w)).join(' ');
       const coPart = labelFree(row.split(/CO-?\s*APPLICANT\s*NAME\s*:?/i)[1]);
       const apPart = labelFree(row.split(/CO-?\s*APPLICANT/i)[0].replace(/.*NAME\s*:?/i, ''));
-      const nm = next.match(/\(R\)\s*(.*?)\s*(?:\(O\)|\bO\)|$)\s*:?\s*(.*)$/i);
+      const nm = next.match(/\(?R\)\s*(.*?)\s*(?:\(\s*[O0]\s*\)|\b[O0]\)|\b1[oO0]\b|\b[O0]\s*:|$)\s*:?\s*(.*)$/i);
       const apMore = nm ? labelFree(nm[1]) : '', coMore = nm ? labelFree(nm[2]) : '';
       const title = s => s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()).trim();
       if (coPart.length >= 3) put('coApplicantName', title([coPart, coMore].filter(Boolean).join(' ')));
