@@ -846,7 +846,8 @@ function renderSettings() {
     <div class="grid"><label class="fld span3"><span>GitHub access token</span><input id="gh-token" type="password" autocomplete="off" placeholder="github_pat_…" value="${esc(s.ghToken || '')}"></label></div>
     <div class="row-actions"><button type="button" class="btn primary" id="gh-save">Save & connect</button><button type="button" class="btn danger-ghost" id="gh-clear">Disconnect</button><span class="muted" id="gh-admin-status"></span></div>
   </section>
-  <p class="version" id="app-version">Loan Tracker · version ${APP_CONFIG.version}</p>`;
+  <p class="version" id="app-version">Loan Tracker · version ${APP_CONFIG.version}</p>
+  <div class="row-actions" style="justify-content:center;padding-bottom:24px"><button type="button" class="btn" id="check-update">Check for updates</button></div>`;
 
   $('#set-form').onsubmit = e => {
     e.preventDefault();
@@ -867,6 +868,14 @@ function renderSettings() {
   $('#set-form').elements.tMonth.onchange = e => {
     const tt = Store.targetFor(e.target.value); const el = $('#set-form').elements;
     el.tFiles.value = tt.files; el.tPremium.value = tt.premium; el.tLoan.value = tt.loan;
+  };
+  $('#check-update').onclick = async () => {
+    const b = $('#check-update'); b.disabled = true; b.textContent = 'Checking…';
+    try {
+      const r = await PWA.checkForUpdate();
+      if (r === 'latest') { toast('You have the latest version (' + APP_CONFIG.version + ')'); b.textContent = 'Check for updates'; b.disabled = false; }
+      else { b.textContent = 'Updating…'; }
+    } catch (e) { toast('Could not check for updates. Check the internet connection.'); b.textContent = 'Check for updates'; b.disabled = false; }
   };
   const ib = $('#pwa-install'); if (ib) ib.onclick = async () => { await PWA.install(); renderSettings(); };
   // Tap the version label 5 times to open the admin setup (GitHub token; keeps it out of Avani's way).

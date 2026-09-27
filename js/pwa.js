@@ -28,6 +28,21 @@ const PWA = (() => {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   }
 
+  // Manual "Check for updates" (Settings): ask the server for a new version and install it right away.
+  async function checkForUpdate() {
+    if (!('serviceWorker' in navigator)) { location.reload(); return 'reloaded'; }
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) { location.reload(); return 'reloaded'; }
+    await reg.update().catch(() => {});
+    const waiting = reg.waiting || await new Promise(res => {
+      const w = reg.installing; if (!w) return res(null);
+      w.addEventListener('statechange', () => { if (w.state === 'installed') res(reg.waiting || w); if (w.state === 'redundant') res(null); });
+      setTimeout(() => res(reg.waiting || null), 20000);
+    });
+    if (waiting) { waiting.postMessage('skipWaiting'); return 'updating'; }   // controllerchange reloads the page
+    return 'latest';
+  }
+
   function showUpdate(apply) {
     const bar = document.createElement('div');
     bar.className = 'update-bar';
@@ -94,7 +109,7 @@ const PWA = (() => {
     catch (e) { return e.name === 'AbortError'; }
   }
 
-  return { register, install, canInstall, standalone, isIOS, iosSteps, installBanner, bindBanner, takeShared, share, canShare: () => !!navigator.share };
+  return { checkForUpdate, register, install, canInstall, standalone, isIOS, iosSteps, installBanner, bindBanner, takeShared, share, canShare: () => !!navigator.share };
 })();
 
 PWA.register();
