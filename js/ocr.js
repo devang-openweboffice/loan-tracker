@@ -54,6 +54,28 @@ const OCR = (() => {
     return c;
   }
 
+  // Big upscale + local threshold: removes grey table backgrounds and box shading, keeps dark text.
+  function adaptive(img, rotate = 0) {
+    const base = prep(img, rotate);   // grayscale, rotated
+    const scale = Math.min(1.7, 4000 / Math.max(base.width, base.height));
+    const W = Math.round(base.width * scale), H = Math.round(base.height * scale);
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(base, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H), p = d.data, n = W * H, gray = new Float32Array(n);
+    for (let i = 0; i < n; i++) gray[i] = p[i * 4];
+    const I = new Float64Array((W + 1) * (H + 1));
+    for (let y = 0; y < H; y++) { let row = 0; for (let x = 0; x < W; x++) { row += gray[y * W + x]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + row; } }
+    const rad = Math.max(12, Math.round(W / 90));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const x0 = Math.max(0, x - rad), x1 = Math.min(W, x + rad + 1), y0 = Math.max(0, y - rad), y1 = Math.min(H, y + rad + 1);
+      const mean = (I[y1 * (W + 1) + x1] - I[y0 * (W + 1) + x1] - I[y1 * (W + 1) + x0] + I[y0 * (W + 1) + x0]) / ((x1 - x0) * (y1 - y0));
+      const v = gray[y * W + x] < mean * 0.85 ? 0 : 255, k = (y * W + x) * 4;
+      p[k] = p[k + 1] = p[k + 2] = v;
+    }
+    g.putImageData(d, 0, 0);
+    return c;
+  }
+
   /* ---------- which page is this? ---------- */
   const SIGNS = {
     sanction: /Sanction\s*Letter|Nature\s*of\s*Facility|REPO\s*rate|Amount\s*of\s*loan|Life\s*Insurance|Instal+ment|Co-?\s*appl/gi,
@@ -153,7 +175,11 @@ const OCR = (() => {
     const rider = t.match(/Rider\s*:?\s*\|?\s*(ACI|APTD|None)\b/i); if (rider) out.rider = rider[1].toUpperCase() === 'NONE' ? 'None' : rider[1].toUpperCase();
     const cover = t.match(/Cover\s*:?\s*\|?\s*(Level|Reducing)/i); if (cover) out.coverType = cover[1][0].toUpperCase() + cover[1].slice(1).toLowerCase();
     const fin = t.match(/Premium\s*Financed\s*:?\s*\|?\s*(Yes|No)\b/i); if (fin) out.premiumFinanced = fin[1][0].toUpperCase() + fin[1].slice(1).toLowerCase();
-    const mph = t.match(/\b(59\d{7})\b/); if (mph) out.masterPolicyNo = mph[1];
+    const mph = t.match(/\b((?:59|37)\d{7})\b/);
+    if (mph && out.masterPolicyNo == null) {
+      out.masterPolicyNo = mph[1];
+      if (!['591761952', '591761890', '372507477', '372507985'].includes(mph[1])) unsure.add('masterPolicyNo');
+    }
     const dob = t.match(/DoB[^\n]*?\b(\d{1,2})\W{1,4}([A-Za-z]{3})\W{1,4}(\d{4})/i);
     if (dob && MONTHS[dob[2].toUpperCase()]) { out.dob = iso(dob[3], MONTHS[dob[2].toUpperCase()], dob[1]); unsure.add('dob'); }
   }
@@ -243,6 +269,14 @@ const OCR = (() => {
         const second = best.type === 'sanction' ? (best.rot ? prep(img, best.rot) : img) : prep(img, best.rot, true);
         const { data } = await w.recognize(second);
         parse(data.text, out, unsure);
+        const GCPP_KEYS = ['sumAssured', 'actualSumAssured', 'coverTerm', 'age', 'basicPremium', 'gst', 'totalPremium', 'mainLoanType'];
+        if (best.type === 'gcpp' && GCPP_KEYS.filter(k => out[k] != null).length < 4) {
+          // hard photo (small print in grey boxes): one more try with a stronger clean-up, reading it as a block of text
+          say(`Photo ${i + 1} is hard to read, trying a stronger clean-up…`);
+          await w.setParameters({ tessedit_pageseg_mode: '6' });
+          try { parse((await w.recognize(adaptive(img, best.rot))).data.text, out, unsure); }
+          finally { await w.setParameters({ tessedit_pageseg_mode: '3' }); }
+        }
       }
     }
     reconcile(out, unsure);
@@ -254,6 +288,7 @@ const OCR = (() => {
     result.documentsFound = [...new Set(found)];
     result.uncertainFields = [...unsure].filter(k => result[k] != null);
     result.notes = out._notes.join(' ');
+    result.valuesRead = Object.keys(result).filter(k => !['documentsFound', 'uncertainFields', 'notes'].includes(k)).length;
     return result;
   }
 

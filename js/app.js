@@ -13,9 +13,9 @@ const FORM = [
     { k: 'applicantName', label: 'Applicant name', req: true },
     { k: 'coApplicantName', label: 'Co-applicant name' },
     { k: 'coApplicantRelation', label: 'Co-applicant relation', type: 'select', options: ['', 'Wife', 'Husband', 'Mother', 'Father', 'Son', 'Daughter', 'Brother', 'Sister', 'Other'] },
-    { k: 'appId', label: 'New App ID / FINNONE no.', req: true, hint: 'Number written on the cover, e.g. 32029374' },
+    { k: 'appId', label: 'New App ID / FINNONE no.', soft: true, hint: 'Number written on the cover, e.g. 32029374. Can be added later.' },
     { k: 'oldAppId', label: 'Old App ID (main loan)' },
-    { k: 'salesManager', label: 'Axis Sales Manager', req: true, list: 'dl-sm' },
+    { k: 'salesManager', label: 'Axis Sales Manager', soft: true, list: 'dl-sm' },
     { k: 'teamLeader', label: 'Team Leader' },
     { k: 'dsaName', label: 'DSA name', list: 'dl-dsa' },
     { k: 'branch', label: 'Branch', def: 'Maninagar' },
@@ -454,6 +454,13 @@ function renderForm(id) {
       const data = await OCR.read(photos, msg => { status.innerHTML = '<span class="spinner"></span> ' + esc(msg); });
       const n = applyExtracted(data);
       const unsure = (data.uncertainFields || []).length;
+      if (n < 5) {
+        status.innerHTML = `<span class="late">The reader could only read ${n} value${n === 1 ? '' : 's'} from these photos.</span> Please type the details below, then tap <b>Check calculations</b> to verify them.
+          <br><span class="muted">Photo tips: hold the phone straight above the page, fill the screen with the table, use good light without shadows, and keep it sharp (tap to focus). The printed sanction letter reads best.</span>` +
+          (data.notes ? `<br><span class="muted">Note: ${esc(data.notes)}</span>` : '');
+        form.scrollIntoView({ behavior: 'smooth' });
+        return;
+      }
       status.innerHTML = `✓ Filled <b>${n}</b> fields from the ${esc((data.documentsFound || []).join(', ') || 'the photos')}. ` +
         (unsure ? `<span class="unsure-note">${unsure} field${unsure > 1 ? 's are' : ' is'} marked in orange: please double-check ${unsure > 1 ? 'them' : 'it'}.</span>` : 'Please check the values before saving.') +
         (data.notes ? `<br><span class="muted">Note: ${esc(data.notes)}</span>` : '');
@@ -507,7 +514,9 @@ function renderForm(id) {
     e.preventDefault();
     const missing = $$('[required]', form).filter(el => !el.value.trim());
     $$('.invalid', form).forEach(el => el.classList.remove('invalid'));
-    if (missing.length) { missing.forEach(el => el.classList.add('invalid')); missing[0].focus(); toast('Please fill the required fields'); return; }
+    if (missing.length) { missing.forEach(el => el.classList.add('invalid')); missing[0].focus(); toast('Please enter the applicant name'); return; }
+    const later = FORM.flatMap(sec => sec.fields).filter(fd => fd.soft && !get(fd.k).trim()).map(fd => fd.label.replace(/ \/.*$/, ''));
+    if (later.length && !confirm(`${later.join(' and ')} ${later.length > 1 ? 'are' : 'is'} empty.\n\nSave the file anyway? You can add ${later.length > 1 ? 'them' : 'it'} later with "Edit details".`)) return;
     const out = f ? Object.assign({}, f) : { id: uid(), createdAt: new Date().toISOString(), history: [], queries: [] };
     FORM.forEach(sec => sec.fields.forEach(fd => {
       let v = get(fd.k);
@@ -569,6 +578,7 @@ function renderDetail(id) {
     </div>
   </div>
 
+  ${!f.appId || !f.salesManager ? `<div class="missing-note">Missing: <b>${[!f.appId && 'App ID', !f.salesManager && 'Sales manager'].filter(Boolean).join(' and ')}</b>. <a href="#edit/${f.id}">Add now ›</a></div>` : ''}
   <div class="kpis">
     <div class="kpi"><span>Life premium</span><b>${inr(fx.premium)}</b><small>basic ${inr(f.basicPremium)} + GST ${inr(f.gst)}</small></div>
     <div class="kpi"><span>Insurance loan</span><b>${inr(fx.loan)}</b><small>EMI ${inr(f.emi)} × ${esc(f.installments || '–')}</small></div>
