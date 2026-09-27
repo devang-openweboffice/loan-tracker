@@ -458,19 +458,23 @@ function renderForm(id) {
       if (n < 5) {
         status.innerHTML = `<span class="late">The reader could only read ${n} value${n === 1 ? '' : 's'} from these photos.</span> Please type the details below, then tap <b>Check calculations</b> to verify them.
           <br><span class="muted">Photo tips: hold the phone straight above the page, fill the screen with the table, use good light without shadows, and keep it sharp (tap to focus). The printed sanction letter reads best.</span>` +
-          (data.notes ? `<br><span class="muted">Note: ${esc(data.notes)}</span>` : '');
+          (data.notes ? `<br><span class="muted">Note: ${esc(data.notes)}</span>` : '') + readTextBox(data);
         form.scrollIntoView({ behavior: 'smooth' });
         return;
       }
       status.innerHTML = `✓ Filled <b>${n}</b> fields from the ${esc((data.documentsFound || []).join(', ') || 'the photos')}. ` +
         (unsure ? `<span class="unsure-note">${unsure} field${unsure > 1 ? 's are' : ' is'} marked in orange: please double-check ${unsure > 1 ? 'them' : 'it'}.</span>` : 'Please check the values before saving.') +
-        (data.notes ? `<br><span class="muted">Note: ${esc(data.notes)}</span>` : '');
+        (data.notes ? `<br><span class="muted">Note: ${esc(data.notes)}</span>` : '') + readTextBox(data);
       form.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
       status.innerHTML = `<span class="late">${esc(err.message)}</span>`;
     } finally { readBtn.textContent = 'Read documents'; readBtn.disabled = !photos.length; }
   };
 
+  // what the reader saw, so a missed field can be reported (copy and send it to Devang)
+  function readTextBox(d) {
+    return d.readText ? `<details class="read-text"><summary class="muted">Show what the reader saw</summary><textarea readonly rows="8" style="width:100%;font:12px monospace">${esc(d.readText)}</textarea></details>` : '';
+  }
   function applyExtracted(d) {
     let count = 0;
     const unsure = new Set(d.uncertainFields || []);

@@ -37,12 +37,15 @@ const OCR = (() => {
 
   // PaddleOCR returns separate text boxes; join boxes on the same row (left → right) into lines,
   // so "Sum Assured (Rs.) :" and "2,100,000" become one line the parsers understand.
-  function toText(items) {
+  function boxesOf(items) {
     const P = p => Array.isArray(p) ? { x: p[0], y: p[1] } : p;
-    const boxes = items.filter(i => i && i.text && i.text.trim() && i.poly).map(i => {
+    return (items || []).filter(i => i && i.text && i.text.trim() && i.poly).map(i => {
       const pts = (i.poly.points || i.poly).map(P), xs = pts.map(p => p.x), ys = pts.map(p => p.y);
-      return { t: i.text.trim(), x: Math.min(...xs), y: (Math.min(...ys) + Math.max(...ys)) / 2, h: Math.max(8, Math.max(...ys) - Math.min(...ys)) };
+      return { t: i.text.trim(), x: Math.min(...xs), r: Math.max(...xs), y: (Math.min(...ys) + Math.max(...ys)) / 2, h: Math.max(8, Math.max(...ys) - Math.min(...ys)) };
     }).sort((a, b) => a.y - b.y);
+  }
+  function toText(items) {
+    const boxes = boxesOf(items);
     const rows = [];
     for (const b of boxes) {
       const r = rows.find(r => Math.abs(r.y - b.y) < Math.min(r.h, b.h) * 0.6);
@@ -230,6 +233,56 @@ const OCR = (() => {
     // PAN = 5 letters, 4 digits, 1 letter; handwriting often has a gap ("BUKPT 1068G")
     const m = t.replace(/[.:]/g, ' ').match(/\b([A-Z]{5})\s?([0-9]{4})\s?([A-Z])\b/); return m ? m[1] + m[2] + m[3] : null;
   }
+  /* Cover sheet by position: handwriting overflows the printed rows (a name's second line sits in the row below,
+     the Old App ID is squeezed between rows), so line order is not enough. */
+  const OLD_RE = /[O0Q][LI1|][DO0]\s*[-.]?\s*A?[PR][PR]?/i;
+  function parseCoverBoxes(boxes, out, unsure) {
+    const put = (k, v) => { if (v != null && v !== '' && out[k] == null) { out[k] = v; unsure.add(k); } };
+    const find = re => boxes.find(b => re.test(b.t));
+    const title = s => s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()).trim();
+    const nameOf = list => list.sort((a, b) => (Math.abs(a.y - b.y) < Math.min(a.h, b.h) * 0.5 ? a.x - b.x : a.y - b.y))
+      .map(b => b.t.replace(/CO-?\s*APPLICANT\s*NAME\s*:?/i, '').replace(/\(\s*[RO0]\s*\)|\b[RO0]\)|^1[oO0]\b|^[O0]\s*:/g, ' ')
+        .replace(/[^A-Za-z .]/g, ' ').replace(/\b(CONTACT|NO|NAME|APPLICANT)\b/gi, ' '))
+      .join(' ').replace(/\s+/g, ' ').split(' ').filter(w => w.replace(/\./g, '').length > 1).join(' ');
+
+    // Old App ID: the label (often misread: "0LD APP TD") with 8 digits after it or right beside it
+    const oldBox = boxes.find(b => OLD_RE.test(b.t) && /[O0Q][LI1|][DO0]/i.test(b.t));
+    const digitsIn = s => s.replace(/[Oo]/g, '0').replace(/[Il|]/g, '1').replace(/\D/g, '');
+    if (oldBox) {
+      let d = digitsIn(oldBox.t.replace(/.*?A?[PR][PR]?\s*[IT1l|]?\s*[DO0]?\s*[:;.\-]*/i, ''));
+      if (d.length !== 8) {
+        const beside = boxes.filter(b => b !== oldBox && Math.abs(b.y - oldBox.y) < Math.max(b.h, oldBox.h) * 0.7 && b.x > oldBox.x && /\d{2}/.test(b.t))
+          .sort((a, b) => a.x - b.x);
+        for (const b of beside) { d += digitsIn(b.t); if (d.length >= 8) break; }
+      }
+      const m = d.match(/\d{8}/); if (d.length <= 9 && m) put('oldAppId', m[0]);
+    }
+    // any other 8-digit 3xxxxxxx number on the cover is the App ID when it sits beside the printed "APP ID" label, else the old one
+    const appLabel = boxes.find(b => /^\W*APP\s*[IT1l|]\s*[DO0]\b/i.test(b.t) && !OLD_RE.test(b.t.replace(/^\W*APP/i, '')));
+    for (const b of boxes) {
+      const m = b.t.replace(/[\s.]/g, '').match(/(?:^|\D)(3\d{7})(?!\d)/); if (!m || b === oldBox) continue;
+      const beside = appLabel && Math.abs(b.y - appLabel.y) < Math.max(b.h, appLabel.h) * 0.7 && b.x > appLabel.x;
+      if (beside) put('appId', m[1]); else if (m[1] !== out.appId) put('oldAppId', m[1]);
+    }
+
+    // Applicant / co-applicant: everything written right of each label, down to the next printed row (LOAN AMOUNT / TENURE)
+    const co = find(/CO-?\s*APP?L?I?CANT/i);
+    const ap = boxes.find(b => b !== co && /L?I?C?ANT\s*NAME/i.test(b.t) && !/CO-?\s*APP/i.test(b.t) && (!co || b.x < co.x));
+    if (!co) return;
+    const stop = boxes.find(b => b.y > co.y + co.h && /TENURE|AMOUNT|EMI\b/i.test(b.t));
+    const bottom = stop ? stop.y - stop.h * 0.4 : co.y + co.h * 3.2, top = co.y - co.h * 0.8;
+    const inBand = b => b.y > top && b.y < bottom;
+    const label = /CONTACT|APPLICANT|^[:;.\s]*$|^\W*\(?\s*[RO0]\s*\)\s*:?\W*$|^1[oO0]\W*$/i;
+    const coLabelEnd = /CO-?\s*APP?L?I?CANT\s*NAME\s*:?\s*\S/i.test(co.t) ? co.x : co.r - 4;
+    const coWords = boxes.filter(b => (b === co ? coLabelEnd === co.x : inBand(b) && b.x >= coLabelEnd && !label.test(b.t)));
+    const coName = nameOf(coWords);
+    if (coName.replace(/\s/g, '').length >= 3) put('coApplicantName', title(coName));
+    if (ap) {
+      const apWords = boxes.filter(b => b !== ap && b !== co && inBand(b) && b.x >= ap.r - 4 && b.r <= co.x + 8 && !label.test(b.t));
+      const apName = nameOf(apWords);
+      if (apName.replace(/\s/g, '').length >= 3) put('applicantName', title(apName));
+    }
+  }
   function parseCover(t, out, unsure, known) {
     const put = (k, v) => { if (v != null && v !== '' && out[k] == null) { out[k] = v; unsure.add(k); } };
     put('pan', parsePan(t.toUpperCase()));
@@ -241,7 +294,7 @@ const OCR = (() => {
     const old = oldDigits ? [null, oldDigits] : null;
     if (old) put('oldAppId', old[1]);
     const ids = lines(t).filter(l => !/OLD/i.test(l)).join(' ').match(/(?:^|\D)(3\d{7})(?!\d)/g) || [];
-    const clean = ids.map(x => x.replace(/\D/g, '')).filter(x => !old || x !== old[1]);
+    const clean = ids.map(x => x.replace(/\D/g, '')).filter(x => x !== (old && old[1]) && x !== out.oldAppId);
     if (clean.length) put('appId', clean[clean.length - 1]);
     const mon = t.match(/\b(\d{2,3})\s*M[OA0]U?N?TH/i), yrs = t.match(/\b(\d{1,2})\s*YEAR/i);
     if (mon && +mon[1] >= 12 && +mon[1] <= 480) { put('installments', +mon[1]); if (+mon[1] % 12 === 0) put('mainLoanTenure', +mon[1] / 12); }
@@ -290,7 +343,7 @@ const OCR = (() => {
       const img = photos[i].file ? await createImageBitmap(photos[i].file).catch(() => loadImg(photos[i].dataUrl)) : await loadImg(photos[i].dataUrl);
       say(`Reading photo ${i + 1} of ${photos.length}… about 30–60 seconds`);
       let [res] = await ocr.predict(prep(img, 0));
-      let text = toText(res.items || []), c = classify(text), best = Object.assign(c, { text });
+      let text = toText(res.items || []), c = classify(text), best = Object.assign(c, { text, items: res.items });
       // sideways photo? (most text boxes taller than wide) → turn it, instead of blind retries
       const tall = (res.items || []).filter(it => { const P = (it.poly.points || it.poly).map(p => Array.isArray(p) ? p : [p.x, p.y]);
         const w = Math.max(...P.map(p => p[0])) - Math.min(...P.map(p => p[0])), h = Math.max(...P.map(p => p[1])) - Math.min(...P.map(p => p[1])); return h > w * 1.5; }).length;
@@ -301,7 +354,7 @@ const OCR = (() => {
           say(`Photo ${i + 1} is sideways, turning it…`);
           [res] = await ocr.predict(prep(img, rot));
           text = toText(res.items || []); c = classify(text);
-          if (c.score > best.score) best = Object.assign(c, { text });
+          if (c.score > best.score) best = Object.assign(c, { text, items: res.items });
           if (c.score >= 3) break;
         }
       }
@@ -315,7 +368,7 @@ const OCR = (() => {
       found.push(names[p.type]);
       if (p.type === 'sanction') parseSanction(p.text, out, unsure);
       if (p.type === 'gcpp') { parseGcpp(p.text, out, unsure); parseGcppDate(p.text, out); }
-      if (p.type === 'cover') parseCover(p.text, out, unsure, known);
+      if (p.type === 'cover') { try { parseCoverBoxes(boxesOf(p.items), out, unsure); } catch (e) {} parseCover(p.text, out, unsure, known); }
       if (p.type === 'enrollment') parseEnrollment(p.text, out, unsure);
     }
     reconcile(out, unsure);
@@ -327,6 +380,7 @@ const OCR = (() => {
     result.documentsFound = [...new Set(found)];
     result.uncertainFields = [...unsure].filter(k => result[k] != null);
     result.notes = out._notes.join(' ');
+    result.readText = pages.map(p => '— ' + names[p.type] + ' —\n' + p.text).join('\n\n');
     result.valuesRead = Object.keys(result).filter(k => !['documentsFound', 'uncertainFields', 'notes'].includes(k)).length;
     return result;
   }
@@ -335,5 +389,5 @@ const OCR = (() => {
     if (m && MONTHS[m[2].toUpperCase()] && out.gcppDate == null) out.gcppDate = iso(m[3], MONTHS[m[2].toUpperCase()], m[1]);
   }
 
-  return { read, _test: { classify, parseSanction, parseGcpp, parseCover, parseEnrollment, reconcile, toText, prep, matchName } };
+  return { read, _test: { parseCoverBoxes, boxesOf, classify, parseSanction, parseGcpp, parseCover, parseEnrollment, reconcile, toText, prep, matchName } };
 })();
