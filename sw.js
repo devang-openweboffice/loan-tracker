@@ -1,6 +1,6 @@
 /* Service worker: offline app shell, the cached photo reader (app/vendor, ~45 MB), and the "share photos to this app" target. */
 
-const VERSION = 'v26';
+const VERSION = 'v27';
 const SHELL_CACHE = 'shell-' + VERSION;
 const RUNTIME_CACHE = 'runtime-cdn';   // fixed name: the reader files survive app updates (not re-downloaded)
 const INBOX = 'share-inbox';

@@ -10,13 +10,27 @@ const DEFAULT_STAGES = [
   'GCPP Calculation',
   'Enrollment Form Signed',
   'DDE',
+  'In Author',
   'Insurance Sanction',
   'Disbursal Documents',
+  'In PDOC',
   'Disbursal DE',
   'RAMG Request',
   'DD Printing',
   'Disbursed'
 ];
+
+// stages added later: [stage, the stage it follows] — inserted once into stage lists saved before they existed
+const ADDED_STAGES = [['In Author', 'DDE'], ['In PDOC', 'Disbursal Documents']];
+function withAddedStages(list) {
+  const out = list.slice();
+  for (const [st, after] of ADDED_STAGES) {
+    if (out.includes(st)) continue;
+    const i = out.indexOf(after);
+    out.splice(i >= 0 ? i + 1 : Math.max(0, out.length - 1), 0, st);
+  }
+  return out;
+}
 
 const OUTCOMES = ['Rejected', 'Cancelled by customer'];
 
@@ -85,7 +99,8 @@ const Store = {
       defaultTargets: Object.assign({}, DEFAULT_SETTINGS.defaultTargets, s.defaultTargets),
       targets: s.targets || {},
       notes: s.notes || {},
-      stages: (s.stages && s.stages.length) ? s.stages : DEFAULT_STAGES.slice()
+      stages: (s.stages && s.stages.length) ? (s.stagesV2 ? s.stages : withAddedStages(s.stages)) : DEFAULT_STAGES.slice(),
+      stagesV2: true
     });
   },
   saveSettings(s) {
